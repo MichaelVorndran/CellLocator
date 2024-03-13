@@ -19,6 +19,7 @@ import configparser
 
 
 
+
 config = configparser.ConfigParser() 
 config.read('config.ini')
 
@@ -390,7 +391,8 @@ class CellAnalyzer:
 
 
         dfac = pd.concat(cell_results_df, ignore_index=True)
-        dfac = dfac.fillna(-1)
+        #pd.set_option('future.no_silent_downcasting', True)  
+        #dfac = dfac.fillna(-1)
         dfac = dfac.round(3)
         dfac.to_csv(os.path.join(csv_dir, f'{self.VID}_cell_data.csv'), sep=';', index=False, decimal=',')
 
@@ -541,7 +543,7 @@ class CellAnalyzer:
 
                     if (x >= size) and (x < (img_w - size - 1)) and (y >= size) and (y < (img_h - size - 1)):
 
-                        fav = flourescence_average_values(None,None,None)
+                        fav = flourescence_average_values(-1,-1,-1)
 
                         if fscc.org_gray is not None:
                             org_gray_crop = fscc.org_gray[int(y-size):int(y+size), int(x-size):int(x+size)]
@@ -558,6 +560,10 @@ class CellAnalyzer:
                             average_denoised_gray = np.mean(denoised_gray_crop)
                             fav.denoised = average_denoised_gray
 
+                        avg_flourrescence_intesities[fscc.name] = fav
+
+                    else:
+                        fav = flourescence_average_values(-2,-2,-2)
                         avg_flourrescence_intesities[fscc.name] = fav
 
                 cell.avg_flourrescence_intesities = avg_flourrescence_intesities
