@@ -907,10 +907,9 @@ def main():
     # Settings
     settings_menu = Menu(menubar, tearoff=0)
     settings_menu.add_command(label="Settings", command=open_settings)
-    settings_menu.add_command(label="Help", command=open_settings)
+    settings_menu.add_command(label="Manual", command=open_settings)
     settings_menu.add_command(label="GitHub", command=open_settings)
     settings_menu.add_command(label="Citeation", command=open_settings)
-    settings_menu.add_command(label="About", command=open_settings)
     menubar.add_cascade(label="Menu", menu=settings_menu)
 
     root.config(menu=menubar)
