@@ -29,11 +29,6 @@ crop_size = int(config['DEFAULT']['crop_size'])
 crop_border = int(config['DEFAULT']['crop_border'])
 
 
-#pyinstaller --onefile PyInstaller_v5_3.py --distpath E:\PyInstallerTests\v5_3 
-
-
-
-
 
 class analysed_image_fsc:
     def __init__(self, name, tot_alive_int, avg_alive_int, tot_dead_int, avg_dead_int):
@@ -836,6 +831,7 @@ def on_resource_dropdown_change(event_value):
 
 def open_settings():
     print("Settings")
+    config.read('config.ini')
 
     new_window = tk.Toplevel()
     new_window.title("Settings")
@@ -854,7 +850,9 @@ def open_settings():
     analyser_model_path_var = tk.StringVar(new_window, value=modelname)
 
     def open_analyser_model_dialog():
+        new_window.attributes('-topmost', False)
         new_model_path = filedialog.askopenfilename(filetypes=[("TFlite Models", "*.tflite")])
+        new_window.attributes('-topmost', True)
 
         if new_model_path:
             (config['DEFAULT']['model_path']) = new_model_path
@@ -862,6 +860,9 @@ def open_settings():
             new_modelname, _ = os.path.splitext(new_modelname_ext)
             config['DEFAULT']['modelname'] = new_modelname
             analyser_model_path_var.set(new_modelname)
+
+    def on_save_image_with_overlay():
+        config['DEFAULT']['save_image_with_overlay'] = str(checkbox_overlay.get())
 
     analyser_model_frame = tk.Frame(new_window)
     analyser_model_frame.grid(row=1, column=0, sticky="nsew")
@@ -876,8 +877,10 @@ def open_settings():
     checkbox_frame = tk.Frame(new_window)
     checkbox_frame.grid(row=2, column=0, sticky="nsew")
 
-    checkbox2 = ctk.CTkCheckBox(checkbox_frame, text="Save image with overlay?")
-    checkbox2.pack(pady=(10,50), padx=5, anchor='w')
+    save_image_with_overlay_value = config['DEFAULT'].getboolean('save_image_with_overlay')  
+    checkbox_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with overlay?", command=on_save_image_with_overlay)
+    checkbox_overlay.pack(pady=(10,50), padx=5, anchor='w')
+    checkbox_overlay.select() if save_image_with_overlay_value else checkbox_overlay.deselect() 
 
 
     save_close_frame = tk.Frame(new_window)
@@ -952,7 +955,6 @@ def main():
     btn_analyse = ctk.CTkButton(root, text="Analyse", command=CA.on_analyse_clicked)
     btn_analyse.configure(width=220)
     btn_analyse.pack(pady=10)
-
 
     root.mainloop()
 
