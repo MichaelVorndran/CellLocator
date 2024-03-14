@@ -840,6 +840,8 @@ def open_settings():
     new_window = tk.Toplevel()
     new_window.title("Settings")
     new_window.geometry("550x270")
+    new_window.lift()
+    new_window.attributes('-topmost', True)
 
     
 
