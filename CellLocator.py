@@ -16,6 +16,7 @@ import matplotlib.backends.backend_pdf
 import math
 from tqdm import tqdm
 import configparser
+import webbrowser
 
 
 
@@ -904,11 +905,27 @@ def main():
 
     menubar = Menu(root)
 
+    def open_manual():
+        # Get the absolute path of the PDF file (for platform compatibility)
+        pdf_path = os.path.abspath('CellLocator_Manual.pdf')
+
+        # Attempt to open the manual
+        try:
+            os.startfile(pdf_path)  # OS-appropriate way to open files
+        except OSError:
+            print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
+
+
+    def open_github():
+        github_url = "https://github.com/MichaelVorndran"  # Replace with your actual URL
+        webbrowser.open(github_url)
+
+
     # Settings
     settings_menu = Menu(menubar, tearoff=0)
     settings_menu.add_command(label="Settings", command=open_settings)
-    settings_menu.add_command(label="Manual", command=open_settings)
-    settings_menu.add_command(label="GitHub", command=open_settings)
+    settings_menu.add_command(label="Manual", command=open_manual)
+    settings_menu.add_command(label="GitHub", command=open_github)
     settings_menu.add_command(label="Citeation", command=open_settings)
     menubar.add_cascade(label="Menu", menu=settings_menu)
 
