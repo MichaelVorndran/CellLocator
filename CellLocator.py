@@ -17,8 +17,14 @@ import math
 from tqdm import tqdm
 import configparser
 import webbrowser
+import gc
+
+from mpl_toolkits.mplot3d import Axes3D 
+import plotly.express as px
 
 
+
+global_model = None
 
 
 config = configparser.ConfigParser() 
@@ -27,29 +33,8 @@ config.read('config.ini')
 resource_allocation = int(config['DEFAULT']['resource_allocation'])
 crop_size = int(config['DEFAULT']['crop_size'])
 crop_border = int(config['DEFAULT']['crop_border'])
+magnification = str(config['DEFAULT']['magnification'])
 
-
-
-class analysed_image_fsc:
-    def __init__(self, name, tot_alive_int, avg_alive_int, tot_dead_int, avg_dead_int):
-        self.name = name
-        self.tot_alive_int = tot_alive_int
-        self.avg_alive_int = avg_alive_int
-        self.tot_dead_int = tot_dead_int
-        self.avg_dead_int = avg_dead_int
-
-class analysed_image:
-    def __init__(self, imagename, conf_alive, conf_dead, conf_total, avg_alive_area, avg_dead_area, count_alive, count_dead, count_total, analysed_fsc):
-        self.imagename = imagename
-        self.conf_alive = conf_alive
-        self.conf_dead = conf_dead
-        self.conf_total = conf_total
-        self.avg_alive_area = avg_alive_area
-        self.avg_dead_area = avg_dead_area
-        self.count_alive = count_alive
-        self.count_dead = count_dead
-        self.count_total = count_total
-        self.analysed_fsc = analysed_fsc
 
 class flourescence_channel_image:
     def __init__(self, name, org_color, org_gray, normalized_gray, normalized_filterd_alive, normalized_filterd_dead, normalized_filterd_conf, denoised_gray, denoised_filterd_alive, denoised_filterd_dead, denoised_filterd_conf):
@@ -80,7 +65,7 @@ class analysed_cell:
         
         
 
-global_model = None
+
 
 def get_timestamp_incuCyte(h):
     days = h // 24  # Calculate whole days
@@ -134,31 +119,6 @@ def get_pos_contours(img, erode_kernel_size=3, threshold=10):
 
     unique_pos = list(set(pos))
     return unique_pos
-
-def get_cell_count(positions, gray_img_alive, gray_img_dead, size=3):
-
-    alive_count, dead_count, unclear_count = 0, 0, 0
-    img_h, img_w = gray_img_alive.shape
-
-    for x, y in positions:
-        # Adjust position to stay within bounds
-        x = np.clip(x, size, img_w - size - 1)
-        y = np.clip(y, size, img_h - size - 1)
-
-        area_alive = gray_img_alive[y-size:y+size, x-size:x+size]
-        area_dead = gray_img_dead[y-size:y+size, x-size:x+size]
-
-        sum_alive = np.sum(area_alive)
-        sum_dead = np.sum(area_dead)
-
-        if sum_alive > sum_dead:
-            alive_count += 1
-        elif sum_dead > sum_alive:
-            dead_count += 1
-        else:
-            unclear_count += 1
-
-    return alive_count, dead_count, unclear_count
 
 
 def get_cell_state(positions, gray_img_alive, gray_img_dead, size=3):
@@ -360,6 +320,8 @@ class CellAnalyzer:
         config.read('config.ini')
         resource_allocation = int(config['DEFAULT']['resource_allocation'])
         model_path = str(config['DEFAULT']['model_path'])
+        csv_decimal = str(config['DEFAULT']['csv_decimal'])
+        #print(f'csv_decimal: {csv_decimal}')
         
         
         num_processes = int(max((mp.cpu_count() * (resource_allocation / 100)),1))
@@ -369,8 +331,10 @@ class CellAnalyzer:
             print("Starting 1 process")
 
 
-        csv_dir = os.path.join(self.main_dir, 'cell_data')
+        self.modelname = config['DEFAULT']['modelname']
+        csv_dir = os.path.join(self.main_dir, self.modelname, 'cell_data')
         os.makedirs(csv_dir, exist_ok=True) 
+        print(csv_dir)
         
         results = []
         cell_results_df = []
@@ -390,18 +354,18 @@ class CellAnalyzer:
         #pd.set_option('future.no_silent_downcasting', True)  
         #dfac = dfac.fillna(-1)
         dfac = dfac.round(3)
-        dfac.to_csv(os.path.join(csv_dir, f'{self.VID}_cell_data.csv'), sep=';', index=False, decimal=',')
+        dfac.to_csv(os.path.join(csv_dir, f'{self.VID}_cell_data.csv'), sep=';', index=False, decimal=csv_decimal)
 
         df = pd.DataFrame(results)
         df = df.sort_values(by='name', ascending=True)
         df = df.round(3)
-        df.to_csv(os.path.join(csv_dir, f'{self.VID}_image_data.csv'), sep=';', index=False, decimal=',')
+        df.to_csv(os.path.join(csv_dir, f'{self.VID}_image_data.csv'), sep=';', index=False, decimal=csv_decimal)
 
 
         unique_vid_well_subset = df['VID_Well_Subset'].unique()
         print(unique_vid_well_subset)
 
-        plot_dir = os.path.join(self.main_dir, 'plots')
+        plot_dir = os.path.join(self.main_dir, self.modelname, 'plots')
         os.makedirs(plot_dir, exist_ok=True) 
 
         # Parameters for the multiplot 
@@ -429,7 +393,7 @@ class CellAnalyzer:
                 axes.plot(time_axis, total_counts, marker='*', color='orange', label='Total')
 
             axes.set_title(f'VID{subset}')
-            axes.set_xlabel('Time (hours)')
+            axes.set_xlabel('Time')
             axes.set_ylabel(ylabel) 
             axes.legend()
 
@@ -451,7 +415,7 @@ class CellAnalyzer:
                 axes[row, col].plot(time_axis, total_counts, marker='*', color='orange', label='Total')
 
             axes[row, col].set_title(f'VID{subset}')
-            axes[row, col].set_xlabel('Time (hours)')
+            axes[row, col].set_xlabel('Time')
             axes[row, col].set_ylabel(ylabel) 
             axes[row, col].legend()
         
@@ -467,6 +431,49 @@ class CellAnalyzer:
 
         fig_avg_area, axes_avg_area = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
         fig_avg_area.canvas.manager.window.title('Average Cell Area')
+
+
+
+
+
+        if len(self.flourescence_channel_names_found) == 3:
+
+            fcns = []
+            for fcn in self.flourescence_channel_names_found:
+                fcns.append(fcn)
+
+            color_map = {'alive': 'blue', 'dead': 'magenta'}
+            colors = dfac['state'].map(color_map)
+
+            for i, subset in enumerate(unique_vid_well_subset):
+
+                subset_df = dfac[dfac['name'].str.contains(subset)]
+                subset_df = subset_df.sort_values(by='name', ascending=True)  
+
+                plotly_fig = px.scatter_3d(subset_df, x=f'{fcns[0]}_norm', y=f'{fcns[1]}_norm', z=f'{fcns[2]}_norm',
+                        animation_frame='name', color='state',
+                        color_discrete_map=color_map,
+                        labels={'green_norm': f"{fcns[0]} Normalized", 'orange_norm': f"{fcns[1]} Normalized", 'nir_norm': f"{fcns[2]} Normalized"},
+                        title="Animated 3D Scatter Plot")
+
+                plotly_fig.update_traces(marker=dict(size=3))
+
+                plotly_fig.update_layout(scene=dict(
+                                xaxis=dict(range=[-1, subset_df[f'{fcns[0]}_norm'].max()], title=f'{fcns[0]} Normalized'),
+                                yaxis=dict(range=[-1, subset_df[f'{fcns[1]}_norm'].max()], title=f'{fcns[1]} Normalized'),
+                                zaxis=dict(range=[-1, subset_df[f'{fcns[2]}_norm'].max()], title=f'{fcns[2]} Normalized'),
+                                aspectratio=dict(x=1, y=1, z=1),
+                                aspectmode='manual'
+                            ),
+                                margin=dict(l=0, r=0, b=0, t=0)
+                            )
+                
+                plotly_fig.write_html(os.path.join(plot_dir, f'{subset}.html'))
+                plotly_fig.show()
+
+
+
+
 
         for fcn in self.flourescence_channel_names_found:
 
@@ -489,17 +496,39 @@ class CellAnalyzer:
             fig_fsc.tight_layout()
 
 
+
+        for fcn in self.flourescence_channel_names_found:
+
+            fig_fsc, axes_fsc = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
+            fig_fsc.canvas.manager.window.title(f'Normalized Mean {fcn} Flourescence Intensity')
+
+            if num_plots == 1: 
+                create_single_plot(axes_fsc, unique_vid_well_subset[0], [f'mean_alive_{fcn}_intensity', f'mean_dead_{fcn}_intensity'], '___', f'Normalized Total {fcn} Flourescence Intensity')
+
+            else:
+                for i, subset in enumerate(unique_vid_well_subset):
+                    create_multi_plot(axes_fsc, subset, [f'mean_alive_{fcn}_intensity', f'mean_dead_{fcn}_intensity'], '___', f'Normalized Total {fcn} Flourescence Intensity')
+
+
+            try:
+                fig_fsc.savefig(os.path.join(plot_dir, f'Normalized Mean {fcn} Flourescence Intensity.pdf'))
+            except Exception as e:
+                print(f"Error saving plot: {e}")
+
+            fig_fsc.tight_layout()
+
+
         #if axes.ndim == 1:
         if num_plots == 1:
             create_single_plot(axes_conf, unique_vid_well_subset[0], ['confluence alive', 'confluence dead', 'confluence'], '___', '%')
             create_single_plot(axes_count, unique_vid_well_subset[0], ['alive cell count', 'dead cell count', 'total cell count'], '___', 'Count')
-            create_single_plot(axes_avg_area, unique_vid_well_subset[0], ['avg_alive_area', 'avg_dead_area'], '___', 'Average Cell Area in Pixel')
+            create_single_plot(axes_avg_area, unique_vid_well_subset[0], ['avg_alive_area', 'avg_dead_area'], '___', 'Average Cell Area in $\mu m$')
         
         else:
             for i, subset in enumerate(unique_vid_well_subset):
                 create_multi_plot(axes_conf, subset, ['confluence alive', 'confluence dead', 'confluence'], '___', '%')
                 create_multi_plot(axes_count, subset, ['alive cell count', 'dead cell count', 'total cell count'], '___', 'Count')
-                create_multi_plot(axes_avg_area, subset, ['avg_alive_area', 'avg_dead_area'], '___', 'Average Cell Area in Pixel')
+                create_multi_plot(axes_avg_area, subset, ['avg_alive_area', 'avg_dead_area'], '___', 'Average Cell Area in $\mu m$')
         
 
         try:
@@ -634,115 +663,183 @@ class CellAnalyzer:
         cv2.imwrite(os.path.join(pos_dir, f'{base_image_name[:-4]}_.png'), pos_color)
         
         alive_rgba = gray2rgba_mask(alive_uint, [255, 0, 0])
-        dead_rgba = gray2rgba_mask(dead_uint, [136, 0, 136])
+        dead_rgba = gray2rgba_mask(dead_uint, [255, 0, 255])
         #pos_rgba = color2rgba_mask(pos_color, [255, 255, 255])
         
-        black_background = np.zeros((height,width,3), np.uint8)
-        comb_phaseimg_black = cv2.addWeighted(input_image,0.7,black_background,0.3,0)
+        #black_background = np.zeros((height,width,3), np.uint8)
+        #comb_phaseimg_black = cv2.addWeighted(input_image,0.8,black_background,0.2,0)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_8_2.png'), comb_phaseimg_black)
+        #comb_phaseimg_black = cv2.addWeighted(input_image,0.7,black_background,0.3,0)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_7_3.png'), comb_phaseimg_black)
+        #comb_phaseimg_black = cv2.addWeighted(input_image,0.6,black_background,0.4,0)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_6_4.png'), comb_phaseimg_black)
+        #comb_phaseimg_black = cv2.addWeighted(input_image,0.5,black_background,0.5,0)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_5_5.png'), comb_phaseimg_black)
+        #comb_phaseimg_black = cv2.addWeighted(input_image,0.4,black_background,0.6,0)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_4_6.png'), comb_phaseimg_black)
         
         comb_img1 = cv2.addWeighted(alive_rgba,1,dead_rgba,1,0)
         b, g, r, alpha = cv2.split(comb_img1)
         rgb = [b,g,r]
         comb_img1_bgr = cv2.merge(rgb,3)
+
+        new_image = np.zeros(input_image.shape, input_image.dtype)
+        new_image = cv2.convertScaleAbs(input_image, alpha=1.5, beta=0)
         
-        comb_img = cv2.addWeighted(comb_phaseimg_black,0.6,comb_img1_bgr,0.4,0)
+        #comb_img = cv2.addWeighted(comb_phaseimg_black,0.6,comb_img1_bgr,0.4,0)
+        comb_img = cv2.addWeighted(new_image,0.8,comb_img1_bgr,0.8,0)
         comb_img_pos = cv2.add(comb_img,pos_color)
         cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}.png'), comb_img_pos)
+
+        #comb_img = cv2.addWeighted(new_image,0.7,comb_img1_bgr,0.3,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_7_3.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.6,comb_img1_bgr,0.4,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_6_4.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.5,comb_img1_bgr,0.5,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_5_5.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.8,comb_img1_bgr,0.5,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_8_5.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.8,comb_img1_bgr,0.8,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_8_8.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,1,comb_img1_bgr,0.3,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_1_3.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,1,comb_img1_bgr,1,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_1_1.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.4,comb_img1_bgr,0.6,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_4_6.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.3,comb_img1_bgr,0.7,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_3_7.png'), comb_img_pos)
+        #
+        #comb_img = cv2.addWeighted(new_image,0.2,comb_img1_bgr,0.8,0)
+        #comb_img_pos = cv2.add(comb_img,pos_color)
+        #cv2.imwrite(os.path.join(combi_dir, f'{base_image_name[:-4]}_2_8.png'), comb_img_pos)
         
         
         alive_count, dead_count, unclear_count, analysed_cells = get_cell_state(positions, alive_uint, dead_uint)
         
+        magnification = str(config['DEFAULT']['magnification'])
+
+        if magnification == '4x':
+            mag_factor = 2.82 
+        elif  magnification == '10x':
+            mag_factor = 1.24  
+        elif  magnification == '20x':
+            mag_factor = 0.62 
+
+        #print(f'mag_factor: {mag_factor}')
         
         avg_alive_area = 0
         if alive_count > 0:
-            avg_alive_area = round((np.sum(alive_uint)/255)/alive_count,0)
+            avg_alive_area = round(((np.sum(alive_uint)/255)/alive_count) * mag_factor,0)
         
         avg_dead_area = 0
         if dead_count > 0:
-            avg_dead_area = round((np.sum(dead_uint)/255)/dead_count,0)
+            avg_dead_area = round(((np.sum(dead_uint)/255)/dead_count) * mag_factor,0)
 
 
         flourescence_channels = []
         alive_norm_filt_tot_ints = {}
         dead_norm_filt_tot_ints = {}
-        alive_area = np.count_nonzero(alive_uint) / alive_uint.size
-        dead_area = np.count_nonzero(dead_uint) / dead_uint.size
+        alive_area = (np.count_nonzero(alive_uint) / alive_uint.size) * mag_factor
+        dead_area = (np.count_nonzero(dead_uint) / dead_uint.size) * mag_factor
 
 
 
         for fcn in self.flourescence_channel_names_found:
             full_path = os.path.join(self.main_dir, fcn)
             if os.path.isdir(full_path):
-                org_img = cv2.imread(os.path.join(full_path, base_image_name), cv2.IMREAD_UNCHANGED)
 
-                dtype = org_img.dtype
+                try:
+                    org_img = cv2.imread(os.path.join(full_path, base_image_name), cv2.IMREAD_UNCHANGED)
 
-                if dtype == 'uint8':
-                    if len(org_img.shape) == 2:
-                        img_gray = org_img
+                    dtype = org_img.dtype
+
+                    if dtype == 'uint8':
+                        if len(org_img.shape) == 2:
+                            img_gray = org_img
+                        else:
+                            img_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
+
+                    elif dtype == 'uint16':
+                        print("Image is 16-bit")
+                        img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                        cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
+
+
+                    elif dtype == 'float32':
+                        print("Image is 32-bit")
+                        img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                        cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
+
                     else:
-                        img_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
-
-                elif dtype == 'uint16':
-                    print("Image is 16-bit")
-                    img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-                    cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
+                        print("Unrecognized bit depth")
 
 
-                elif dtype == 'float32':
-                    print("Image is 32-bit")
-                    img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-                    cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
-
-                else:
-                    print("Unrecognized bit depth")
+                    average_brightness = np.mean(img_gray)
+                    normalized_img_gray = img_gray - average_brightness
+                    normalized_img_uint8 = np.clip(normalized_img_gray, 0, 255).astype(np.uint8)
 
 
-                average_brightness = np.mean(img_gray)
-                normalized_img_gray = img_gray - average_brightness
-                normalized_img_uint8 = np.clip(normalized_img_gray, 0, 255).astype(np.uint8)
+                    if alive_area > 0:
+                        norm_filt_alive = normalized_img_uint8.copy()
+                        norm_filt_alive[alive_uint <= 0] = 0
+                        alive_norm_filt_tot_int = np.sum(norm_filt_alive)
+                        alive_norm_filt_avg_int = alive_norm_filt_tot_int / alive_area
+                        alive_norm_filt_tot_ints[fcn] = alive_norm_filt_avg_int
+                    else:
+                        norm_filt_alive = None
+                        alive_norm_filt_tot_ints[fcn] = 0
 
+                    if dead_area > 0:
+                        norm_filt_dead = normalized_img_uint8.copy()
+                        norm_filt_dead[dead_uint == 0] = 0
+                        dead_norm_filt_tot_int = np.sum(norm_filt_dead)
+                        dead_norm_filt_avg_int = dead_norm_filt_tot_int / dead_area
+                        dead_norm_filt_tot_ints[fcn] = dead_norm_filt_avg_int
+                    else:
+                        norm_filt_dead = None
+                        dead_norm_filt_tot_ints[fcn] = 0
 
-                if alive_area > 0:
-                    norm_filt_alive = normalized_img_uint8.copy()
-                    norm_filt_alive[alive_uint <= 0] = 0
-                    alive_norm_filt_tot_int = np.sum(norm_filt_alive)
-                    alive_norm_filt_avg_int = alive_norm_filt_tot_int / alive_area
-                    alive_norm_filt_tot_ints[fcn] = alive_norm_filt_avg_int
-                else:
-                    norm_filt_alive = None
-                    alive_norm_filt_tot_ints[fcn] = 0
+                    normalized_filtered_conf = normalized_img_uint8.copy()
+                    normalized_filtered_conf[conf_uint] = 0
 
-                if dead_area > 0:
-                    norm_filt_dead = normalized_img_uint8.copy()
-                    norm_filt_dead[dead_uint == 0] = 0
-                    dead_norm_filt_tot_int = np.sum(norm_filt_dead)
-                    dead_norm_filt_avg_int = dead_norm_filt_tot_int / dead_area
-                    dead_norm_filt_tot_ints[fcn] = dead_norm_filt_avg_int
-                else:
-                    norm_filt_dead = None
-                    dead_norm_filt_tot_ints[fcn] = 0
+                    fcci = flourescence_channel_image(fcn, org_img, img_gray, 
+                                                      normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf,
+                                                      None, None, None, None)
 
-                normalized_filtered_conf = normalized_img_uint8.copy()
-                normalized_filtered_conf[conf_uint] = 0
+                    flourescence_channels.append(fcci)
 
-                fcci = flourescence_channel_image(fcn, org_img, img_gray, 
-                                                  normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf,
-                                                  None, None, None, None)
+                    #filtered_alive = normalized_img_gray.copy()
+                    #filtered_alive[alive_uint == 0] = 0
+                    #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/alive_{base_image_name[:-4]}.png', filtered_alive)
+                    #
+                    #filtered_dead = normalized_img_gray.copy()
+                    #filtered_dead[dead_uint == 0] = 0
+                    #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/dead_{base_image_name[:-4]}.png', filtered_dead)
 
-                flourescence_channels.append(fcci)
+                    #filtered_conf = normalized_img_gray.copy()
+                    #filtered_conf[conf_uint] = 0
+                    #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/conf_{base_image_name[:-4]}.png', filtered_conf)
 
-                #filtered_alive = normalized_img_gray.copy()
-                #filtered_alive[alive_uint == 0] = 0
-                #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/alive_{base_image_name[:-4]}.png', filtered_alive)
-                #
-                #filtered_dead = normalized_img_gray.copy()
-                #filtered_dead[dead_uint == 0] = 0
-                #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/dead_{base_image_name[:-4]}.png', filtered_dead)
-
-                #filtered_conf = normalized_img_gray.copy()
-                #filtered_conf[conf_uint] = 0
-                #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/conf_{base_image_name[:-4]}.png', filtered_conf)
+                except Exception as e:
+                    print(e)
 
 
         avg_alive_size = np.floor(np.sqrt(avg_alive_area))
@@ -771,9 +868,11 @@ class CellAnalyzer:
 
         for color, intensity in alive_norm_filt_tot_ints.items():
             result_dict[f'alive_{color}_intensity'] = intensity
+            result_dict[f'mean_alive_{color}_intensity'] = intensity / alive_count
 
         for color, intensity in dead_norm_filt_tot_ints.items():
             result_dict[f'dead_{color}_intensity'] = intensity
+            result_dict[f'mean_dead_{color}_intensity'] = intensity / dead_count
 
 
         cells_list = []  # Create an empty list to store cell dictionaries
@@ -817,7 +916,20 @@ class CellAnalyzer:
 
 
 
+def on_magnification_dropdown_change(event_value):
 
+    config['DEFAULT']['magnification'] = event_value
+
+    with open('config.ini', 'w') as configfile:
+        config.write(configfile)   
+
+    #magnification = event_value
+    #print(magnification)
+    #config['DEFAULT']['resource_allocation'] = event_value
+    #
+    ## Write the updated configuration back to the file
+    #with open('config.ini', 'w') as configfile:
+    #    config.write(configfile)   
 
 def on_resource_dropdown_change(event_value):
 
@@ -835,7 +947,7 @@ def open_settings():
 
     new_window = tk.Toplevel()
     new_window.title("Settings")
-    new_window.geometry("550x270")
+    new_window.geometry("550x570")
     new_window.lift()
     new_window.attributes('-topmost', True)
 
@@ -861,8 +973,15 @@ def open_settings():
             config['DEFAULT']['modelname'] = new_modelname
             analyser_model_path_var.set(new_modelname)
 
+            #del global_model
+            tf.keras.backend.clear_session()
+            gc.collect()
+
     def on_save_image_with_overlay():
         config['DEFAULT']['save_image_with_overlay'] = str(checkbox_overlay.get())
+
+    def on_csv_decimal_dropdown_change(event_value):
+        config['DEFAULT']['csv_decimal'] = str(event_value)
 
     analyser_model_frame = tk.Frame(new_window)
     analyser_model_frame.grid(row=1, column=0, sticky="nsew")
@@ -876,15 +995,29 @@ def open_settings():
     # Frame for checkboxes 
     checkbox_frame = tk.Frame(new_window)
     checkbox_frame.grid(row=2, column=0, sticky="nsew")
-
+    
     save_image_with_overlay_value = config['DEFAULT'].getboolean('save_image_with_overlay')  
     checkbox_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with overlay?", command=on_save_image_with_overlay)
     checkbox_overlay.pack(pady=(10,50), padx=5, anchor='w')
     checkbox_overlay.select() if save_image_with_overlay_value else checkbox_overlay.deselect() 
 
 
+    csv_decimal_frame = tk.Frame(new_window)
+    csv_decimal_frame.grid(row=3, column=0, sticky="nsew")
+    csv_decimal_options = [',', '.'] 
+    csv_decimal_label = ctk.CTkLabel(csv_decimal_frame, text="Decimal Separator")  
+    csv_decimal_label.pack()
+
+    csv_decimal_dropdown = ctk.CTkComboBox(csv_decimal_frame, values=csv_decimal_options, command=on_csv_decimal_dropdown_change)
+    #csv_decimal_dropdown.set(selected_value)
+    csv_decimal_dropdown.pack()
+
+
+
+
+
     save_close_frame = tk.Frame(new_window)
-    save_close_frame.grid(row=3, column=0, sticky="nsew")
+    save_close_frame.grid(row=4, column=0, sticky="nsew")
 
     def save_settings():
         with open('config.ini', 'w') as configfile:
@@ -904,7 +1037,7 @@ def open_settings():
 def main(): 
     root = ctk.CTk()  # Create a customtkinter root window
     root.title("Cellanalyser Lite")
-    root.geometry('400x200')
+    root.geometry('400x270')
 
     CA = CellAnalyzer()
 
@@ -936,6 +1069,19 @@ def main():
 
     root.config(menu=menubar)
 
+    btn_open = ctk.CTkButton(root, text="Select Phase Image Directory", command=CA.on_select_bf_dir_clicked)
+    btn_open.configure(width=220)
+    btn_open.pack(pady=10)
+
+    magnification_options = ["4x", "10x", "20x"] 
+    magnification_label = ctk.CTkLabel(root, text="Magnification")  
+    magnification_label.pack()
+
+    magnification_dropdown = ctk.CTkComboBox(master=root, values=magnification_options, command=on_magnification_dropdown_change)
+    magnification_dropdown.set(magnification)
+    magnification_dropdown.pack()
+
+
 
     # Resource Selection Dropdown 
     selected_value = config['DEFAULT']['resource_allocation']
@@ -948,9 +1094,7 @@ def main():
     resource_dropdown.pack()
 
     # Buttons 
-    btn_open = ctk.CTkButton(root, text="Select Phase Image Directory", command=CA.on_select_bf_dir_clicked)
-    btn_open.configure(width=220)
-    btn_open.pack(pady=10)
+    
 
     btn_analyse = ctk.CTkButton(root, text="Analyse", command=CA.on_analyse_clicked)
     btn_analyse.configure(width=220)
