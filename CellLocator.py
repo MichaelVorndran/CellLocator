@@ -12,6 +12,8 @@ import multiprocessing as mp
 import csv
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.rcParams['figure.max_open_warning'] = 0
 import matplotlib.backends.backend_pdf
 import math
 from tqdm import tqdm
@@ -21,7 +23,7 @@ import gc
 
 from mpl_toolkits.mplot3d import Axes3D 
 import plotly.express as px
-
+import plotly.graph_objects as go
 
 
 
@@ -187,6 +189,41 @@ def color2rgba_mask(colorimg, output_color):
     return grayimg_bgra
 
 
+def create_color_map(R_max, G_max, B_max, max_grayscale):
+    """
+    Creates a color map from RGB to grayscale mapping.
+    
+    Args:
+    R_max (int): Maximum value of the Red component in the RGB model
+    G_max (int): Maximum value of the Green component in the RGB model
+    B_max (int): Maximum value of the Blue component in the RGB model
+    max_grayscale (int): Maximum grayscale value that corresponds to (R_max, G_max, B_max)
+    
+    Returns:
+    dict: A dictionary mapping each grayscale value to an RGB tuple
+    """
+    color_map = {}
+    for grayscale_val in range(max_grayscale + 1):
+        R = int((R_max / max_grayscale) * grayscale_val)
+        G = int((G_max / max_grayscale) * grayscale_val)
+        B = int((B_max / max_grayscale) * grayscale_val)
+        color_map[grayscale_val] = (R, G, B)
+    return color_map
+
+
+def colorize_with_mapping(grayscale_image, color_map, max_grayscale_value):
+    
+    h, w = grayscale_image.shape[:2]
+
+    grayscale_image[grayscale_image>=max_grayscale_value] = max_grayscale_value
+
+    colorized_image = np.zeros((h,w,3), dtype=np.uint8)
+
+    for key in color_map:
+        colorized_image[grayscale_image==key] = color_map[key]
+
+    return colorized_image
+
 
 
 
@@ -244,13 +281,13 @@ def create_crops(image, crop_size, crop_border, org_h, org_w, border_mode=cv2.BO
 
     return crops, num_cutouts_w, num_cutouts_h
 
-def restore_image_from_crops(crops, crop_size, crop_border, num_cutouts_w, num_cutouts_h, org_h, org_w):
+def restore_image_from_crops(crops, crop_size, crop_border, output_image_channels, num_cutouts_w, num_cutouts_h, org_h, org_w):
 
     h = int(num_cutouts_h * (crop_size-crop_border))
     w = int(num_cutouts_w * (crop_size-crop_border))
     inner_crop_size = int(crop_size - 2*crop_border)
 
-    background = np.zeros((h,w,3), np.float32) 
+    background = np.zeros((h,w,output_image_channels), np.float32) 
 
 
     crop_counter = 0
@@ -314,13 +351,72 @@ class CellAnalyzer:
 
 
     def on_analyse_clicked(self):
+
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+
+        use_denoiser = config['DEFAULT'].getboolean('use_denoiser') 
+
+        if use_denoiser:
+            for fscn in self.flourescence_channel_names_found:
+                fscn_dir = os.path.join(self.main_dir, fscn)
+
+                if fscn == 'red':
+                    self.max_grayscale_value = int(0.114*0 + 0.587*39 + 0.299*255)+1
+                    self.color_map = create_color_map(0, 39, 255, self.max_grayscale_value)
+
+                elif fscn == 'orange':
+                    self.max_grayscale_value = int(0.114*0 + 0.587*0 + 0.299*255)+1
+                    self.color_map = create_color_map(0, 0, 255, self.max_grayscale_value)
+                    
+                elif fscn == 'green':
+                    self.max_grayscale_value = int(0.114*0 + 0.587*255 + 0.299*0)+1
+                    self.color_map = create_color_map(0, 255, 0, self.max_grayscale_value)
+                    
+                elif fscn == 'nir':
+                    self.max_grayscale_value = int(0.114*255 + 0.587*128 + 0.299*0)+1
+                    self.color_map = create_color_map(255, 128, 0, self.max_grayscale_value)
+                    
+                else:
+                    self.max_grayscale_value = int(0.114*0 + 0.587*39 + 0.299*255)+1
+                    self.color_map = create_color_map(0, 39, 255, self.max_grayscale_value)
+                    
+                
+                self.current_fscn = fscn
+
+                images = [os.path.join(fscn_dir, img) for img in os.listdir(fscn_dir)]
+                total_images = len(images)
+                
+                pbar = tqdm(total=total_images)
+                
+                
+                
+                resource_allocation = int(config['DEFAULT']['resource_allocation'])
+                model_path_denoiser = str(config['DEFAULT']['model_path_denoiser'])
+                
+                num_processes = int(max((mp.cpu_count() * (resource_allocation / 100)),1))
+                if num_processes > 1:
+                    print(f"\nStarting {num_processes} processes to denoise {fscn} flourescence channel ")
+                else:
+                    print("\nStarting 1 process")
+
+                with mp.Pool(processes=num_processes, initializer=init_worker, initargs=(model_path_denoiser,)) as pool:
+                    for _ in pool.imap_unordered(self.process_single_image_denoiser, images):
+
+                        pbar.update(1)
+                
+                pbar.close()
+                print(f"Denoising {fscn} flourescence channel complete.")
+
+
+
         images = [os.path.join(self.phase_img_dir, img) for img in os.listdir(self.phase_img_dir)]
         total_images = len(images)
         
         pbar = tqdm(total=total_images)
         
-        config = configparser.ConfigParser()
-        config.read('config.ini')
+        #config = configparser.ConfigParser()
+        #config.read('config.ini')
         resource_allocation = int(config['DEFAULT']['resource_allocation'])
         model_path = str(config['DEFAULT']['model_path_analyser'])
         csv_decimal = str(config['DEFAULT']['csv_decimal'])
@@ -329,9 +425,9 @@ class CellAnalyzer:
         
         num_processes = int(max((mp.cpu_count() * (resource_allocation / 100)),1))
         if num_processes > 1:
-            print("Starting", num_processes, " processes")
+            print("\nStarting", num_processes, " processes to analyse phase images.")
         else:
-            print("Starting 1 process")
+            print("\nStarting 1 process")
 
 
         self.modelname_analyser = config['DEFAULT']['modelname_analyser']
@@ -342,7 +438,7 @@ class CellAnalyzer:
         results = []
         cell_results_df = []
         with mp.Pool(processes=num_processes, initializer=init_worker, initargs=(model_path,)) as pool:
-            for result_tuple  in pool.imap_unordered(self.process_single_image, images):
+            for result_tuple  in pool.imap_unordered(self.process_single_image_analysis, images):
                 results_dict, analysed_cells_df = result_tuple
                 results.append(results_dict)
                 cell_results_df.append(analysed_cells_df)
@@ -350,12 +446,12 @@ class CellAnalyzer:
                 pbar.update(1)
         
         pbar.close()
-        print("Processing complete.")
+        print("Analysis complete.")
 
+
+        print('Saving data.')
 
         dfac = pd.concat(cell_results_df, ignore_index=True)
-        #pd.set_option('future.no_silent_downcasting', True)  
-        #dfac = dfac.fillna(-1)
         dfac = dfac.round(3)
         dfac.to_csv(os.path.join(csv_dir, f'{self.VID}_cell_data.csv'), sep=';', index=False, decimal=csv_decimal)
 
@@ -364,6 +460,9 @@ class CellAnalyzer:
         df = df.round(3)
         df.to_csv(os.path.join(csv_dir, f'{self.VID}_image_data.csv'), sep=';', index=False, decimal=csv_decimal)
 
+
+
+        print('Creating Plots.')
 
         unique_vid_well_subsets = df['VID_Well_Subset'].unique()
         print(unique_vid_well_subsets)
@@ -395,25 +494,14 @@ class CellAnalyzer:
 
 
         max_num_subsets_per_well = max(well_counts.values())
-        print(f'max_num_subsets_per_well: {max_num_subsets_per_well}')
+        #print(f'max_num_subsets_per_well: {max_num_subsets_per_well}')
 
-        #plots_per_row = 3 if num_plots < 10 else 5
-
-        #plots_per_row = 3 if num_plots < 10 else max_num_subsets_per_well
-        #plots_per_row = max_num_subsets_per_well
-
-
-        if num_plots <= 4:
+        if num_plots <= 2:
+            plots_per_row = 1
+        elif num_plots <= 4:
             plots_per_row = 2
         else:
-            plots_per_row = max_num_subsets_per_well
-
-
-        #elif num_plots <= 9: 
-        #    plots_per_row = max(3, max_num_subsets_per_well)
-        #else:
-        #    plots_per_row = max(5, max_num_subsets_per_well)
-
+            plots_per_row = max(2, max_num_subsets_per_well)
 
 
         min_rows = 1
@@ -421,6 +509,9 @@ class CellAnalyzer:
         # Calculate rows and columns for the multiplot
         num_rows = max(min_rows, int(np.ceil(num_plots / plots_per_row)))  
         num_cols = min(plots_per_row, num_plots)
+
+        print(f'num_rows: {num_rows}')
+        print(f'num_cols: {num_cols}')
         
 
         def create_single_plot(axes, vid_well_subset, data_columns, ylabel):
@@ -445,25 +536,65 @@ class CellAnalyzer:
 
         def create_multi_plot(axes, vid_well_subset, data_columns, ylabel):
             subset_data = df[df['VID_Well_Subset'] == vid_well_subset]
-            #print(subset_data)
             alive_data = subset_data[data_columns[0]]
             dead_data = subset_data[data_columns[1]]
             time_axis = range(len(alive_data))
-        
-            row = i // plots_per_row
-            col = i % plots_per_row
-        
-            axes[row, col].plot(time_axis, alive_data, marker='o', color='blue', label='Alive')
-            axes[row, col].plot(time_axis, dead_data, marker='s', color='magenta', label='Dead')
 
+            # Compute the position of the current subplot
+            row = i // num_cols
+            col = i % num_cols
+
+            # Adjust axes array if it is 1-dimensional
+            if num_cols == 1:
+                ax = axes[row]  # When there's only one column, index only by row
+            elif num_rows == 1:
+                ax = axes[col]  # When there's only one row, index only by column
+            else:
+                ax = axes[row, col]  # When there are multiple rows and columns
+
+            # Plot data
+            ax.plot(time_axis, alive_data, marker='o', color='blue', label='Alive')
+            ax.plot(time_axis, dead_data, marker='s', color='magenta', label='Dead')
+
+            # Handle the third dataset if present
             if len(data_columns) == 3:
                 total_data = subset_data[data_columns[2]]
-                axes[row, col].plot(time_axis, total_data, marker='*', color='orange', label='Total')
+                ax.plot(time_axis, total_data, marker='*', color='orange', label='Total')
 
-            axes[row, col].set_title(f'VID{vid_well_subset}')
-            axes[row, col].set_xlabel('Time')
-            axes[row, col].set_ylabel(ylabel) 
-            axes[row, col].legend()
+            ax.set_title(f'VID{vid_well_subset}')
+            ax.set_xlabel('Time')
+            ax.set_ylabel(ylabel)
+            ax.legend()
+
+
+            #subset_data = df[df['VID_Well_Subset'] == vid_well_subset]
+            ##print(subset_data)
+            #alive_data = subset_data[data_columns[0]]
+            #dead_data = subset_data[data_columns[1]]
+            #time_axis = range(len(alive_data))
+            #
+            #row = i // plots_per_row
+            #col = i % plots_per_row
+            #
+            #if axes.ndim == 1:
+            #    axes = np.array([axes])
+            #
+            #print(f"i: {i}")
+            #print(f"plots_per_row: {plots_per_row}")
+            #print(f"row: {row}")
+            #print(f"col: {col}")
+            #
+            #axes[row, col].plot(time_axis, alive_data, marker='o', color='blue', label='Alive')
+            #axes[row, col].plot(time_axis, dead_data, marker='s', color='magenta', label='Dead')
+            #
+            #if len(data_columns) == 3:
+            #    total_data = subset_data[data_columns[2]]
+            #    axes[row, col].plot(time_axis, total_data, marker='*', color='orange', label='Total')
+            #
+            #axes[row, col].set_title(f'VID{vid_well_subset}')
+            #axes[row, col].set_xlabel('Time')
+            #axes[row, col].set_ylabel(ylabel) 
+            #axes[row, col].legend()
 
 
         
@@ -506,7 +637,7 @@ class CellAnalyzer:
                     fcns.append(fcn)
         
                 color_map = {'alive': 'blue', 'dead': 'magenta'}
-                colors = dfac['state'].map(color_map)
+                #colors = dfac['state'].map(color_map)
         
                 for i, subset in enumerate(unique_vid_well_subsets):
 
@@ -529,7 +660,7 @@ class CellAnalyzer:
                                              yaxis=dict(range=[0, subset_df[f'{fcns[1]}_{plot_data}'].max()], 
                                                         title=f'{fcns[1]} {plot_label}'))
 
-                    plotly_fig.write_html(os.path.join(plot_dir, f'{subset}.html'))
+                    plotly_fig.write_html(os.path.join(plot_dir, f'{plot_data}_{subset}.html'))
                     plotly_fig.show()
 
 
@@ -544,6 +675,60 @@ class CellAnalyzer:
         
                 for i, subset in enumerate(unique_vid_well_subsets):
         
+                    #subset_df = dfac[dfac['name'].str.contains(subset)]
+                    #numeric_cols = subset_df.select_dtypes(include='number').columns
+                    #subset_df = subset_df[~(subset_df[numeric_cols] < 0).any(axis=1)] 
+                    #
+                    ##subset_df = subset_df[subset_df.applymap(lambda x: x == '-2.0').all(axis=1)] #remove all rows with negative values
+                    #subset_df = subset_df.sort_values(by='name', ascending=True)  
+                    #
+                    #
+                    ## Calculate centroids
+                    ##temp_df = subset_df[subset_df[f'{fcns[0]}_{plot_data}'] > 0]
+                    #centroids = subset_df.groupby(['state', 'name']).mean().reset_index()
+                    #centroids['is_centroid'] = True  # Mark these rows as centroids
+                    #
+                    ## Add centroid data to the main DataFrame
+                    #subset_df['is_centroid'] = False  # Mark existing data as not centroids
+                    #combined_df = pd.concat([subset_df, centroids])
+                    #
+                    ## If you need to specify specific columns (like x, y, z values), you can do that explicitly:
+                    #centroids['x'] = centroids[f'{fcns[0]}_{plot_data}']
+                    #centroids['y'] = centroids[f'{fcns[1]}_{plot_data}']
+                    #centroids['z'] = centroids[f'{fcns[2]}_{plot_data}']
+                    #
+                    #combined_df['marker_size'] = combined_df['is_centroid'].apply(lambda x: 100 if x else 3)
+                    #
+                    ## Plot including centroids
+                    #plotly_fig = px.scatter_3d(
+                    #    combined_df, x=f'{fcns[0]}_{plot_data}', y=f'{fcns[1]}_{plot_data}', z=f'{fcns[2]}_{plot_data}',
+                    #    #x='x',
+                    #    #y='y',
+                    #    #z='z',
+                    #    animation_frame='name',
+                    #    color='state',
+                    #    symbol='is_centroid',  # This will differentiate centroids
+                    #    color_discrete_map=color_map,
+                    #    labels={'x': f"{fcns[0]} {plot_label}", 'y': f"{fcns[1]} {plot_label}", 'z': f"{fcns[2]} {plot_label}"},
+                    #    title="Animated 3D Scatter Plot",
+                    #    size_max=100,  # Adjust this as needed
+                    #    size='marker_size'  # Adjust marker size based on whether the row is a centroid
+                    #    #opacity=0.8  # Adjust opacity to improve visualization, if needed
+                    #)
+                    #
+                    #
+                    #plotly_fig.update_layout(scene=dict(
+                    #                xaxis=dict(range=[0, subset_df[f'{fcns[0]}_{plot_data}'].max()], title=f'{fcns[0]} {plot_label}'),
+                    #                yaxis=dict(range=[0, subset_df[f'{fcns[1]}_{plot_data}'].max()], title=f'{fcns[1]} {plot_label}'),
+                    #                zaxis=dict(range=[0, subset_df[f'{fcns[2]}_{plot_data}'].max()], title=f'{fcns[2]} {plot_label}'),
+                    #                aspectratio=dict(x=1, y=1, z=1),
+                    #                aspectmode='manual'
+                    #            ),
+                    #                margin=dict(l=0, r=0, b=0, t=0)
+                    #            )
+                    #
+
+
                     subset_df = dfac[dfac['name'].str.contains(subset)]
                     subset_df = subset_df.sort_values(by='name', ascending=True)  
         
@@ -564,9 +749,11 @@ class CellAnalyzer:
                                 ),
                                     margin=dict(l=0, r=0, b=0, t=0)
                                 )
-                    
-                    plotly_fig.write_html(os.path.join(plot_dir, f'{subset}.html'))
-                    plotly_fig.show()
+
+
+
+                    plotly_fig.write_html(os.path.join(plot_dir, f'{plot_data}_{subset}.html'))
+                    #plotly_fig.show()
 
 
 
@@ -598,11 +785,11 @@ class CellAnalyzer:
                 fig_fsc.canvas.manager.window.title(f'{plot_label} Mean {fcn} Flourescence Intensity')
 
                 if num_plots == 1: 
-                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Flourescence Intensity')
+                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Flourescence Intensity')
 
                 else:
                     for i, vid_well_subset in enumerate(unique_vid_well_subsets):
-                        create_multi_plot(axes_fsc, vid_well_subset, [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Flourescence Intensity')
+                        create_multi_plot(axes_fsc, vid_well_subset, [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Flourescence Intensity')
 
 
                 try:
@@ -638,7 +825,9 @@ class CellAnalyzer:
         fig_count.tight_layout()
         fig_avg_area.tight_layout()
         
-        plt.show()
+        #plt.show()
+
+        print('all done')
 
 
 
@@ -688,11 +877,70 @@ class CellAnalyzer:
 
                 cell.avg_flourrescence_intesities = avg_flourrescence_intesities
                                
-            return cells
+        return cells
 
 
 
-    def process_single_image(self, image_path):
+
+    def process_single_image_denoiser(self, image_path):
+        global global_model
+
+        org_img = cv2.imread(os.path.join(image_path), cv2.IMREAD_UNCHANGED)
+        
+        dtype = org_img.dtype
+        
+        if dtype == 'uint8':
+            if len(org_img.shape) == 2:
+                input_image_gray = org_img
+            else:
+                input_image_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
+        
+        elif dtype == 'uint16':
+            input_image_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        
+        elif dtype == 'float32':
+            input_image_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        
+        else:
+            print("Unrecognized bit depth")
+
+
+        height, width = input_image_gray.shape[:2]
+
+        crops, num_cutouts_w, num_cutouts_h = create_crops(input_image_gray, crop_size, crop_border, height, width)
+
+        preds = []
+
+        for crop in crops:
+
+            prepared_crop = np.array(crop.reshape(-1, crop_size, crop_size, 1), dtype=np.float32)
+                            
+            global_model.set_tensor(global_model.get_input_details()[0]['index'], prepared_crop)
+            global_model.invoke()
+                            
+            output_data_tflite = global_model.get_tensor(global_model.get_output_details()[0]['index'])
+
+            preds.append(output_data_tflite[0])
+
+
+        full_img_pred = restore_image_from_crops(preds, crop_size, crop_border, 1, num_cutouts_w, num_cutouts_h, height, width)
+        full_img_pred_uint = np.squeeze(full_img_pred.astype(np.uint8))
+
+        #print(full_img_pred_uint.shape)
+        # restore color
+        if len(org_img.shape) == 3:
+            full_img_pred_uint = colorize_with_mapping(full_img_pred_uint, self.color_map, self.max_grayscale_value)
+
+
+        out_dir = os.path.join(self.main_dir, f'{self.current_fscn}_denoised')
+        os.makedirs(out_dir, exist_ok=True)
+
+        base_image_name = os.path.basename(image_path)
+        cv2.imwrite(os.path.join(out_dir, base_image_name), full_img_pred_uint)
+
+
+
+    def process_single_image_analysis(self, image_path):
         global global_model
         input_image = cv2.imread(image_path)
         input_image_gray = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
@@ -714,7 +962,7 @@ class CellAnalyzer:
             preds.append(output_data_tflite[0])
 
 
-        full_img_preds = restore_image_from_crops(preds, crop_size, crop_border, num_cutouts_w, num_cutouts_h, height, width)
+        full_img_preds = restore_image_from_crops(preds, crop_size, crop_border, 3, num_cutouts_w, num_cutouts_h, height, width)
                                 
         alive, dead, pos = cv2.split(full_img_preds)
 
@@ -931,133 +1179,6 @@ class CellAnalyzer:
 
 
 
-            #if os.path.isdir(full_path_denoised):
-            #    
-            #    try:
-            #        org_img = cv2.imread(os.path.join(full_path_denoised, base_image_name))
-            #
-            #        if len(org_img.shape) == 2:
-            #            img_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
-            #        else:
-            #            img_gray = org_img
-            #
-            #        average_brightness = np.mean(img_gray)
-            #        normalized_img_gray = img_gray - average_brightness
-            #        normalized_img_uint8 = np.clip(normalized_img_gray, 0, 255).astype(np.uint8)
-            #
-            #
-            #        if alive_area > 0:
-            #            denoised_filt_alive = img_gray.copy()
-            #            denoised_filt_alive[alive_uint <= 0] = 0
-            #            alive_denoised_filt_tot_int = np.sum(denoised_filt_alive)
-            #            alive_denoised_filt_avg_int = alive_denoised_filt_tot_int / alive_area
-            #            alive_denoised_filt_tot_ints[fcn] = alive_denoised_filt_avg_int
-            #        else:
-            #            denoised_filt_alive = None
-            #            alive_denoised_filt_tot_ints[fcn] = 0
-            #
-            #        if dead_area > 0:
-            #            denoised_filt_dead = img_gray.copy()
-            #            denoised_filt_dead[dead_uint == 0] = 0
-            #            dead_denoised_filt_tot_int = np.sum(denoised_filt_dead)
-            #            dead_denoised_filt_avg_int = dead_denoised_filt_tot_int / dead_area
-            #            dead_denoised_filt_tot_ints[fcn] = dead_denoised_filt_avg_int
-            #        else:
-            #            denoised_filt_dead = None
-            #            dead_denoised_filt_tot_ints[fcn] = 0
-            #
-            #        denoised_filtered_conf = img_gray.copy()
-            #        denoised_filtered_conf[conf_uint] = 0
-            #
-            #        fcci = flourescence_channel_image(fcn, org_img, img_gray, 
-            #                                          None, None, None, None, 
-            #                                          img_gray, denoised_filt_alive, denoised_filt_dead, denoised_filtered_conf)
-            #
-            #        flourescence_channels.append(fcci)
-            #
-            #    except Exception as e:
-            #        print(e)
-            #
-            #
-            #
-            #elif os.path.isdir(full_path):
-            #
-            #    try:
-            #        org_img = cv2.imread(os.path.join(full_path, base_image_name), cv2.IMREAD_UNCHANGED)
-            #
-            #        dtype = org_img.dtype
-            #
-            #        if dtype == 'uint8':
-            #            if len(org_img.shape) == 2:
-            #                img_gray = org_img
-            #            else:
-            #                img_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
-            #
-            #        elif dtype == 'uint16':
-            #            print("Image is 16-bit")
-            #            img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            #            cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
-            #
-            #
-            #        elif dtype == 'float32':
-            #            print("Image is 32-bit")
-            #            img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            #            cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
-            #
-            #        else:
-            #            print("Unrecognized bit depth")
-            #
-            #
-            #        average_brightness = np.mean(img_gray)
-            #        normalized_img_gray = img_gray - average_brightness
-            #        normalized_img_uint8 = np.clip(normalized_img_gray, 0, 255).astype(np.uint8)
-            #
-            #
-            #        if alive_area > 0:
-            #            norm_filt_alive = normalized_img_uint8.copy()
-            #            norm_filt_alive[alive_uint <= 0] = 0
-            #            alive_norm_filt_tot_int = np.sum(norm_filt_alive)
-            #            alive_norm_filt_avg_int = alive_norm_filt_tot_int / alive_area
-            #            alive_norm_filt_tot_ints[fcn] = alive_norm_filt_avg_int
-            #        else:
-            #            norm_filt_alive = None
-            #            alive_norm_filt_tot_ints[fcn] = 0
-            #
-            #        if dead_area > 0:
-            #            norm_filt_dead = normalized_img_uint8.copy()
-            #            norm_filt_dead[dead_uint == 0] = 0
-            #            dead_norm_filt_tot_int = np.sum(norm_filt_dead)
-            #            dead_norm_filt_avg_int = dead_norm_filt_tot_int / dead_area
-            #            dead_norm_filt_tot_ints[fcn] = dead_norm_filt_avg_int
-            #        else:
-            #            norm_filt_dead = None
-            #            dead_norm_filt_tot_ints[fcn] = 0
-            #
-            #        normalized_filtered_conf = normalized_img_uint8.copy()
-            #        normalized_filtered_conf[conf_uint] = 0
-            #
-            #        fcci = flourescence_channel_image(fcn, org_img, img_gray, 
-            #                                          normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf,
-            #                                          None, None, None, None)
-            #
-            #        flourescence_channels.append(fcci)
-            #
-            #        #filtered_alive = normalized_img_gray.copy()
-            #        #filtered_alive[alive_uint == 0] = 0
-            #        #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/alive_{base_image_name[:-4]}.png', filtered_alive)
-            #        #
-            #        #filtered_dead = normalized_img_gray.copy()
-            #        #filtered_dead[dead_uint == 0] = 0
-            #        #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/dead_{base_image_name[:-4]}.png', filtered_dead)
-            #
-            #        #filtered_conf = normalized_img_gray.copy()
-            #        #filtered_conf[conf_uint] = 0
-            #        #cv2.imwrite(f'E://PyInstallerTests/flourescence_state_filtered/conf_{base_image_name[:-4]}.png', filtered_conf)
-            #
-            #    except Exception as e:
-            #        print(e)
-
-
         avg_alive_size = np.floor(np.sqrt(avg_alive_area))
         avg_dead_size = np.floor(np.sqrt(avg_dead_area))
 
@@ -1110,11 +1231,12 @@ class CellAnalyzer:
                 'state': ac.state
             }
             
-            for fcn, int_values in ac.avg_flourrescence_intesities.items():
+            if flourescence_channels:
+                for fcn, int_values in ac.avg_flourrescence_intesities.items():
 
-                cell_dict[f'{fcn}_org'] = int_values.org
-                cell_dict[f'{fcn}_norm'] = int_values.normalized
-                cell_dict[f'{fcn}_denoised'] = int_values.denoised
+                    cell_dict[f'{fcn}_org'] = int_values.org
+                    cell_dict[f'{fcn}_norm'] = int_values.normalized
+                    cell_dict[f'{fcn}_denoised'] = int_values.denoised
             
             cells_list.append(cell_dict)
         
