@@ -9,12 +9,12 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import multiprocessing as mp  
-import csv
+#import csv
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.rcParams['figure.max_open_warning'] = 0
-import matplotlib.backends.backend_pdf
+#import matplotlib.backends.backend_pdf
 import math
 from tqdm import tqdm
 import configparser
@@ -433,7 +433,7 @@ class CellAnalyzer:
         self.modelname_analyser = config['DEFAULT']['modelname_analyser']
         csv_dir = os.path.join(self.main_dir, self.modelname_analyser, 'cell_data')
         os.makedirs(csv_dir, exist_ok=True) 
-        print(csv_dir)
+        #print(csv_dir)
         
         results = []
         cell_results_df = []
@@ -917,16 +917,16 @@ class CellAnalyzer:
         dead_dir = os.path.join(main_dir, modelname, 'dead')
         pos_org_dir = os.path.join(main_dir, modelname, 'pos_org')
         pos_dir = os.path.join(main_dir, modelname, 'pos')
-        cellocate_overlay_dir = os.path.join(main_dir, modelname, 'cellocate_overlay')
-        conf_overlay_dir = os.path.join(main_dir, modelname, 'conf_overlay')
+        #cellocate_overlay_dir = os.path.join(main_dir, modelname, 'cellocate_overlay')
+        #conf_overlay_dir = os.path.join(main_dir, modelname, 'conf_overlay')
 
         os.makedirs(conf_dir, exist_ok=True)
         os.makedirs(alive_dir, exist_ok=True)
         os.makedirs(dead_dir, exist_ok=True)
         os.makedirs(pos_org_dir, exist_ok=True)
         os.makedirs(pos_dir, exist_ok=True)
-        os.makedirs(cellocate_overlay_dir, exist_ok=True)
-        os.makedirs(conf_overlay_dir, exist_ok=True)
+        #os.makedirs(cellocate_overlay_dir, exist_ok=True)
+        #os.makedirs(conf_overlay_dir, exist_ok=True)
                         
         base_image_name = os.path.basename(image_path)
         cv2.imwrite(os.path.join(conf_dir, f'{base_image_name[:-4]}.png'), conf_uint)
@@ -958,20 +958,33 @@ class CellAnalyzer:
         rgb = [b,g,r]
         conf_img_rgb = cv2.merge(rgb,3)
 
-        new_image = np.zeros(input_image.shape, input_image.dtype)
-        new_image = cv2.convertScaleAbs(input_image, alpha=1.5, beta=0)
-        
-        cellocate_overlay_img = cv2.addWeighted(new_image,0.8,comb_img_rgb,0.8,0)
-        cellocate_overlay_img_pos = cv2.add(cellocate_overlay_img,pos_color)
-        cv2.imwrite(os.path.join(cellocate_overlay_dir, f'{base_image_name[:-4]}.png'), cellocate_overlay_img_pos)
+        #save_image_with_cellocate_overlay_value = config['DEFAULT'].getboolean('save_image_with_cellocate_overlay')
+        if config['DEFAULT'].getboolean('save_image_with_cellocate_overlay'):
+
+            cellocate_overlay_dir = os.path.join(main_dir, modelname, 'cellocate_overlay')
+            os.makedirs(cellocate_overlay_dir, exist_ok=True)
+
+            new_image = np.zeros(input_image.shape, input_image.dtype)
+            new_image = cv2.convertScaleAbs(input_image, alpha=1.5, beta=0)
+            
+            cellocate_overlay_img = cv2.addWeighted(new_image,0.8,comb_img_rgb,0.8,0)
+            cellocate_overlay_img_pos = cv2.add(cellocate_overlay_img,pos_color)
+            cv2.imwrite(os.path.join(cellocate_overlay_dir, f'{base_image_name[:-4]}.png'), cellocate_overlay_img_pos)
 
 
         #print(f"new_image.shape {new_image.shape}")
         #print(f"conf_img_rgb.shape {conf_img_rgb.shape}")
 
-        conf_overlay_img = cv2.addWeighted(new_image,0.8,conf_img_rgb,0.2,0)
-        #conf_img_pos = cv2.add(comb_img,pos_color)
-        cv2.imwrite(os.path.join(conf_overlay_dir, f'{base_image_name[:-4]}.png'), conf_overlay_img)
+        if config['DEFAULT'].getboolean('save_image_with_conf_overlay'):
+
+            conf_overlay_dir = os.path.join(main_dir, modelname, 'conf_overlay')
+            os.makedirs(conf_overlay_dir, exist_ok=True)
+
+            new_image = np.zeros(input_image.shape, input_image.dtype)
+            new_image = cv2.convertScaleAbs(input_image, alpha=1.5, beta=0)
+
+            conf_overlay_img = cv2.addWeighted(new_image,0.8,conf_img_rgb,0.2,0)
+            cv2.imwrite(os.path.join(conf_overlay_dir, f'{base_image_name[:-4]}.png'), conf_overlay_img)
         
         
         alive_count, dead_count, unclear_count, analysed_cells = get_cell_state(positions, alive_uint, dead_uint)
@@ -1254,7 +1267,7 @@ def open_settings():
 
     new_window = tk.Toplevel()
     new_window.title("Settings")
-    new_window.geometry("550x570")
+    #new_window.geometry("800x600")
     new_window.lift()
     new_window.attributes('-topmost', True)
 
@@ -1283,8 +1296,11 @@ def open_settings():
             tf.keras.backend.clear_session()
             gc.collect()
 
-    def on_save_image_with_overlay():
-        config['DEFAULT']['save_image_with_overlay'] = str(checkbox_overlay.get())
+    def on_save_image_with_cellocate_overlay():
+        config['DEFAULT']['save_image_with_cellocate_overlay'] = str(checkbox_cellocate_overlay.get())
+
+    def on_save_image_with_conf_overlay():
+        config['DEFAULT']['save_image_with_conf_overlay'] = str(checkbox_conf_overlay.get())
 
     def on_csv_decimal_dropdown_change(event_value):
         config['DEFAULT']['csv_decimal'] = str(event_value)
@@ -1302,28 +1318,36 @@ def open_settings():
     checkbox_frame = tk.Frame(new_window)
     checkbox_frame.grid(row=2, column=0, sticky="nsew")
     
-    save_image_with_overlay_value = config['DEFAULT'].getboolean('save_image_with_overlay')  
-    checkbox_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with overlay?", command=on_save_image_with_overlay)
-    checkbox_overlay.pack(pady=(10,50), padx=5, anchor='w')
-    checkbox_overlay.select() if save_image_with_overlay_value else checkbox_overlay.deselect() 
+    save_image_with_cellocate_overlay_value = config['DEFAULT'].getboolean('save_image_with_cellocate_overlay')  
+    checkbox_cellocate_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with cellocate overlay?", command=on_save_image_with_cellocate_overlay)
+    checkbox_cellocate_overlay.pack(pady=(50,5), padx=5, anchor='w')
+    checkbox_cellocate_overlay.select() if save_image_with_cellocate_overlay_value else checkbox_cellocate_overlay.deselect() 
+
+    checkbox_frame = tk.Frame(new_window)
+    checkbox_frame.grid(row=3, column=0, sticky="nsew")
+    
+    save_image_with_overlay_value = config['DEFAULT'].getboolean('save_image_with_conf_overlay')  
+    checkbox_conf_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with confluence overlay?", command=on_save_image_with_conf_overlay)
+    checkbox_conf_overlay.pack(pady=(5,50), padx=5, anchor='w')
+    checkbox_conf_overlay.select() if save_image_with_overlay_value else checkbox_conf_overlay.deselect() 
 
 
     csv_decimal_frame = tk.Frame(new_window)
-    csv_decimal_frame.grid(row=3, column=0, sticky="nsew")
+    csv_decimal_frame.grid(row=4, column=0, sticky="nsew")
     csv_decimal_options = [',', '.'] 
     csv_decimal_label = ctk.CTkLabel(csv_decimal_frame, text="Decimal Separator")  
-    csv_decimal_label.pack()
+    csv_decimal_label.pack(padx=5, anchor='w')
 
     csv_decimal_dropdown = ctk.CTkComboBox(csv_decimal_frame, values=csv_decimal_options, command=on_csv_decimal_dropdown_change)
     #csv_decimal_dropdown.set(selected_value)
-    csv_decimal_dropdown.pack()
+    csv_decimal_dropdown.pack(pady=(5,50), padx=5, anchor='w')
 
 
 
 
 
     save_close_frame = tk.Frame(new_window)
-    save_close_frame.grid(row=4, column=0, sticky="nsew")
+    save_close_frame.grid(row=5, column=0, sticky="nsew")
 
     def save_settings():
         with open('config.ini', 'w') as configfile:
