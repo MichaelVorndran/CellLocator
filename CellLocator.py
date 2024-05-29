@@ -3,6 +3,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import multiprocessing
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox, filedialog, Toplevel, Menu
 import customtkinter as ctk
 import tensorflow as tf
@@ -21,15 +22,13 @@ import configparser
 import webbrowser
 import gc
 
-from mpl_toolkits.mplot3d import Axes3D 
+#from mpl_toolkits.mplot3d import Axes3D 
 import plotly.express as px
-import plotly.graph_objects as go
+#import plotly.graph_objects as go
 
 
-
+# --- Global Variables ---
 global_model = None
-
-
 config = configparser.ConfigParser() 
 config.read('config.ini')
 
@@ -39,7 +38,7 @@ crop_border = int(config['DEFAULT']['crop_border'])
 magnification = str(config['DEFAULT']['magnification'])
 
 
-class flourescence_channel_image:
+class FluorescenceChannelImage:
     def __init__(self, name, org_color, org_gray, normalized_gray, normalized_filterd_alive, normalized_filterd_dead, normalized_filterd_conf, denoised_gray, denoised_filterd_alive, denoised_filterd_dead, denoised_filterd_conf):
         self.name = name
         self.org_color = org_color
@@ -53,13 +52,13 @@ class flourescence_channel_image:
         self.denoised_filterd_dead = denoised_filterd_dead
         self.denoised_filterd_conf = denoised_filterd_conf
 
-class flourescence_average_values:
+class FluorescenceAverageValues:
     def __init__(self, org, normalized, denoised):
         self.org = org
         self.normalized = normalized
         self.denoised = denoised
 
-class analysed_cell:
+class AnalyzedCell:
     def __init__(self, x, y, state, avg_flourrescence_intesities):
         self.x = x
         self.y = y
@@ -67,17 +66,6 @@ class analysed_cell:
         self.avg_flourrescence_intesities = avg_flourrescence_intesities 
         
         
-
-
-
-def get_timestamp_incuCyte(h):
-    days = h // 24  # Calculate whole days
-    hours = h % 24  # Calculate remaining hours
-
-    timestamp = f"{days:02d}d{hours:02d}h00m"  # Use f-strings for formatting
-
-    return timestamp
-
 
 
 def get_pos_contours(img, erode_kernel_size=3, threshold=10):
@@ -95,17 +83,12 @@ def get_pos_contours(img, erode_kernel_size=3, threshold=10):
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (erode_kernel_size, erode_kernel_size))
 
-    # Direct grayscale conversion (if necessary)
-    if len(img.shape) == 3 and img.shape[2] > 1:
-        grayimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        grayimg = img.copy()  # Avoid modifying the input if it's already grayscale
+    grayimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img.copy() 
+
 
     # Erosion
     eroded_img = cv2.erode(grayimg, kernel)
 
-    ## Thresholding
-    #ret, thresh = cv2.threshold(eroded_img, threshold, 255, cv2.THRESH_BINARY)  
 
     # Find contours
     contours, hierarchy = cv2.findContours(eroded_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -141,7 +124,7 @@ def get_cell_state(positions, gray_img_alive, gray_img_dead, size=3):
         sum_alive = np.sum(area_alive)
         sum_dead = np.sum(area_dead)
 
-        ac = analysed_cell(x,y,None,None)
+        ac = AnalyzedCell(x,y,None,None)
 
         if sum_alive > sum_dead:
             alive_count += 1
@@ -156,8 +139,6 @@ def get_cell_state(positions, gray_img_alive, gray_img_dead, size=3):
         else:
             unclear_count += 1
             ac.state = 'unclear'
-
-        #cells.append(ac)
 
     return alive_count, dead_count, unclear_count, cells
 
@@ -174,29 +155,16 @@ def gray2rgba_mask(grayimg, output_color):
 
     return grayimg_bgra
 
-def color2rgba_mask(colorimg, output_color):
-    grayimg = cv2.cvtColor(colorimg, cv2.COLOR_BGR2GRAY)
-    ret, mask = cv2.threshold(grayimg, 0, 255, cv2.THRESH_BINARY)   #cv2.THRESH_BINARY_INV |cv2.THRESH_OTSU)
-    #grayimg_bgr = cv2.cvtColor(grayimg,cv2.COLOR_GRAY2RGB)
-    colorimg[mask == 255] = output_color #[0, 0, 255] = red    [0, 255, 0] = green    [255, 0, 0] = blue
-    
-    tmp = cv2.cvtColor(colorimg, cv2.COLOR_BGR2GRAY)
-    _,alpha = cv2.threshold(tmp,0,255,cv2.THRESH_BINARY)
-    b, g, r = cv2.split(colorimg)
-    rgba = [b,g,r, alpha]
-    grayimg_bgra = cv2.merge(rgba,4)
-
-    return grayimg_bgra
 
 
-def create_color_map(R_max, G_max, B_max, max_grayscale):
+def create_color_map(r_max, g_max, b_max, max_grayscale):
     """
     Creates a color map from RGB to grayscale mapping.
     
     Args:
-    R_max (int): Maximum value of the Red component in the RGB model
-    G_max (int): Maximum value of the Green component in the RGB model
-    B_max (int): Maximum value of the Blue component in the RGB model
+    r_max (int): Maximum value of the Red component in the RGB model
+    g_max (int): Maximum value of the Green component in the RGB model
+    b_max (int): Maximum value of the Blue component in the RGB model
     max_grayscale (int): Maximum grayscale value that corresponds to (R_max, G_max, B_max)
     
     Returns:
@@ -204,9 +172,9 @@ def create_color_map(R_max, G_max, B_max, max_grayscale):
     """
     color_map = {}
     for grayscale_val in range(max_grayscale + 1):
-        R = int((R_max / max_grayscale) * grayscale_val)
-        G = int((G_max / max_grayscale) * grayscale_val)
-        B = int((B_max / max_grayscale) * grayscale_val)
+        R = int((r_max / max_grayscale) * grayscale_val)
+        G = int((g_max / max_grayscale) * grayscale_val)
+        B = int((b_max / max_grayscale) * grayscale_val)
         color_map[grayscale_val] = (R, G, B)
     return color_map
 
@@ -223,17 +191,6 @@ def colorize_with_mapping(grayscale_image, color_map, max_grayscale_value):
         colorized_image[grayscale_image==key] = color_map[key]
 
     return colorized_image
-
-
-
-
-
-
-
-
-
-
-
 
 def init_worker(model_path):
     global global_model
@@ -314,7 +271,6 @@ def restore_image_from_crops(crops, crop_size, crop_border, output_image_channel
 
 class CellAnalyzer:
     def __init__(self):
-        self.mask_dir = str(config['DEFAULT']['mask_dir'])
 
         self.model_path_analyser = str(config['DEFAULT']['model_path_analyser'])
         self.model_path_denoiser = str(config['DEFAULT']['model_path_denoiser'])
@@ -338,7 +294,7 @@ class CellAnalyzer:
         filenames = os.listdir(self.phase_img_dir)
         if filenames:  
             self.VID = filenames[0].split('_', 1)[0]
-            print(self.VID)
+            #print(self.VID)
 
         for fcn in self.flourescence_channel_names:
             full_path = os.path.join(self.main_dir, fcn)
@@ -407,6 +363,7 @@ class CellAnalyzer:
                 
                 pbar.close()
                 print(f"Denoising {fscn} flourescence channel complete.")
+                
 
 
 
@@ -415,13 +372,9 @@ class CellAnalyzer:
         
         pbar = tqdm(total=total_images)
         
-        #config = configparser.ConfigParser()
-        #config.read('config.ini')
         resource_allocation = int(config['DEFAULT']['resource_allocation'])
         model_path = str(config['DEFAULT']['model_path_analyser'])
         csv_decimal = str(config['DEFAULT']['csv_decimal'])
-        #print(f'csv_decimal: {csv_decimal}')
-        
         
         num_processes = int(max((mp.cpu_count() * (resource_allocation / 100)),1))
         if num_processes > 1:
@@ -433,20 +386,20 @@ class CellAnalyzer:
         self.modelname_analyser = config['DEFAULT']['modelname_analyser']
         csv_dir = os.path.join(self.main_dir, self.modelname_analyser, 'cell_data')
         os.makedirs(csv_dir, exist_ok=True) 
-        #print(csv_dir)
         
         results = []
         cell_results_df = []
         with mp.Pool(processes=num_processes, initializer=init_worker, initargs=(model_path,)) as pool:
             for result_tuple  in pool.imap_unordered(self.process_single_image_analysis, images):
-                results_dict, analysed_cells_df = result_tuple
+                results_dict, AnalyzedCells_df = result_tuple
                 results.append(results_dict)
-                cell_results_df.append(analysed_cells_df)
+                cell_results_df.append(AnalyzedCells_df)
 
                 pbar.update(1)
         
         pbar.close()
         print("Analysis complete.")
+        
 
 
         print('Saving data.')
@@ -465,22 +418,17 @@ class CellAnalyzer:
         print('Creating Plots.')
 
         unique_vid_well_subsets = df['VID_Well_Subset'].unique()
-        print(unique_vid_well_subsets)
+        #print(unique_vid_well_subsets)
 
         plot_dir = os.path.join(self.main_dir, self.modelname_analyser, 'plots')
         os.makedirs(plot_dir, exist_ok=True) 
 
-        # Parameters for the multiplot 
         num_plots = len(unique_vid_well_subsets)
-
-        # get num of subsets
 
         def extract_wellname(text):
             start_index = text.find("_") + 1
             end_index = text.rfind("_")
             return text[start_index:end_index]
-
-        #unique_wells = set(extract_wellname(item) for item in unique_vid_well_subsets)
 
         well_counts = {}
         for item in unique_vid_well_subsets:
@@ -494,7 +442,6 @@ class CellAnalyzer:
 
 
         max_num_subsets_per_well = max(well_counts.values())
-        #print(f'max_num_subsets_per_well: {max_num_subsets_per_well}')
 
         if num_plots <= 2:
             plots_per_row = 1
@@ -510,8 +457,8 @@ class CellAnalyzer:
         num_rows = max(min_rows, int(np.ceil(num_plots / plots_per_row)))  
         num_cols = min(plots_per_row, num_plots)
 
-        print(f'num_rows: {num_rows}')
-        print(f'num_cols: {num_cols}')
+        #print(f'num_rows: {num_rows}')
+        #print(f'num_cols: {num_cols}')
        
 
         def create_single_plot(axes, vid_well_subset, data_columns, ylabel):
@@ -620,7 +567,6 @@ class CellAnalyzer:
                     fcns.append(fcn)
         
                 color_map = {'alive': 'blue', 'dead': 'magenta'}
-                #colors = dfac['state'].map(color_map)
         
                 for i, subset in enumerate(unique_vid_well_subsets):
 
@@ -654,7 +600,6 @@ class CellAnalyzer:
                     fcns.append(fcn)
         
                 color_map = {'alive': 'blue', 'dead': 'magenta'}
-                #colors = dfac['state'].map(color_map)
         
                 for i, subset in enumerate(unique_vid_well_subsets):
 
@@ -746,7 +691,7 @@ class CellAnalyzer:
 
         try:
             fig_conf.savefig(os.path.join(plot_dir, 'confluence.pdf'))
-            fig_conf_cellocate.savefig(os.path.join(plot_dir, 'confluence_cellocate.pdf'))
+            fig_conf_cellocate.savefig(os.path.join(plot_dir, 'confluence_CellLocate.pdf'))
             fig_count.savefig(os.path.join(plot_dir, 'Cell Count.pdf'))
             fig_avg_area.savefig(os.path.join(plot_dir, 'Average Cell Area.pdf'))
         except Exception as e:
@@ -784,7 +729,7 @@ class CellAnalyzer:
 
                     if (x >= size) and (x < (img_w - size - 1)) and (y >= size) and (y < (img_h - size - 1)):
 
-                        fav = flourescence_average_values(-1,-1,-1)
+                        fav = FluorescenceAverageValues(-1,-1,-1)
 
                         if fscc.org_gray is not None:
                             org_gray_crop = fscc.org_gray[int(y-size):int(y+size), int(x-size):int(x+size)]
@@ -804,7 +749,7 @@ class CellAnalyzer:
                         avg_flourrescence_intesities[fscc.name] = fav
 
                     else:
-                        fav = flourescence_average_values(-2,-2,-2)
+                        fav = FluorescenceAverageValues(-2,-2,-2)
                         avg_flourrescence_intesities[fscc.name] = fav
 
                 cell.avg_flourrescence_intesities = avg_flourrescence_intesities
@@ -815,28 +760,32 @@ class CellAnalyzer:
 
 
     def process_single_image_denoiser(self, image_path):
+        """
+        Denoises a single image using a pre-loaded TensorFlow Lite model.
+
+        This function reads an image, converts it to grayscale (if necessary), 
+        creates crops for denoising, applies the denoising model to each crop, 
+        reconstructs the denoised image, and saves the result. 
+
+        Args:
+            image_path (str): Path to the input image file.
+
+        Returns:
+            None 
+        """
+
         global global_model
 
         org_img = cv2.imread(os.path.join(image_path), cv2.IMREAD_UNCHANGED)
-        
-        dtype = org_img.dtype
-        
-        if dtype == 'uint8':
-            if len(org_img.shape) == 2:
-                input_image_gray = org_img
-            else:
-                input_image_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
-        
-        elif dtype == 'uint16':
-            input_image_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        
-        elif dtype == 'float32':
-            input_image_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        
-        else:
-            print("Unrecognized bit depth")
 
+        dtype_mapping = {
+            'uint8': lambda img: img if len(img.shape) == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY),
+            'uint16': lambda img: cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U),
+            'float32': lambda img: cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        }
 
+        input_image_gray = dtype_mapping.get(str(org_img.dtype), lambda img: print("Unrecognized bit depth"))(org_img)
+        
         height, width = input_image_gray.shape[:2]
 
         crops, num_cutouts_w, num_cutouts_h = create_crops(input_image_gray, crop_size, crop_border, height, width)
@@ -858,8 +807,7 @@ class CellAnalyzer:
         full_img_pred = restore_image_from_crops(preds, crop_size, crop_border, 1, num_cutouts_w, num_cutouts_h, height, width)
         full_img_pred_uint = np.squeeze(full_img_pred.astype(np.uint8))
 
-        #print(full_img_pred_uint.shape)
-        # restore color
+        # Restore color if the original image was not grayscale
         if len(org_img.shape) == 3:
             full_img_pred_uint = colorize_with_mapping(full_img_pred_uint, self.color_map, self.max_grayscale_value)
 
@@ -902,11 +850,9 @@ class CellAnalyzer:
         alive_uint = ((alive > 0.5)*255).astype(np.uint8)
         dead_uint = ((dead > 0.5)*255).astype(np.uint8)
         pos_uint = ((pos > 0.5)*255).astype(np.uint8)      
-        #conf_uint = np.logical_or(alive_uint, dead_uint).astype(np.uint8) * 255 
 
         alive_conf = (np.count_nonzero(alive_uint) / alive_uint.size) * 100
         dead_conf = (np.count_nonzero(dead_uint) / dead_uint.size) * 100
-        #total_conf = alive_conf + dead_conf
         total_conf = (np.count_nonzero(conf_uint) / conf_uint.size) * 100
 
         modelname = str(config['DEFAULT']['modelname_analyser'])
@@ -917,16 +863,12 @@ class CellAnalyzer:
         dead_dir = os.path.join(main_dir, modelname, 'dead')
         pos_org_dir = os.path.join(main_dir, modelname, 'pos_org')
         pos_dir = os.path.join(main_dir, modelname, 'pos')
-        #cellocate_overlay_dir = os.path.join(main_dir, modelname, 'cellocate_overlay')
-        #conf_overlay_dir = os.path.join(main_dir, modelname, 'conf_overlay')
 
         os.makedirs(conf_dir, exist_ok=True)
         os.makedirs(alive_dir, exist_ok=True)
         os.makedirs(dead_dir, exist_ok=True)
         os.makedirs(pos_org_dir, exist_ok=True)
         os.makedirs(pos_dir, exist_ok=True)
-        #os.makedirs(cellocate_overlay_dir, exist_ok=True)
-        #os.makedirs(conf_overlay_dir, exist_ok=True)
                         
         base_image_name = os.path.basename(image_path)
         cv2.imwrite(os.path.join(conf_dir, f'{base_image_name[:-4]}.png'), conf_uint)
@@ -958,10 +900,9 @@ class CellAnalyzer:
         rgb = [b,g,r]
         conf_img_rgb = cv2.merge(rgb,3)
 
-        #save_image_with_cellocate_overlay_value = config['DEFAULT'].getboolean('save_image_with_cellocate_overlay')
         if config['DEFAULT'].getboolean('save_image_with_cellocate_overlay'):
 
-            cellocate_overlay_dir = os.path.join(main_dir, modelname, 'cellocate_overlay')
+            cellocate_overlay_dir = os.path.join(main_dir, modelname, 'CellLocate_overlay')
             os.makedirs(cellocate_overlay_dir, exist_ok=True)
 
             new_image = np.zeros(input_image.shape, input_image.dtype)
@@ -971,9 +912,6 @@ class CellAnalyzer:
             cellocate_overlay_img_pos = cv2.add(cellocate_overlay_img,pos_color)
             cv2.imwrite(os.path.join(cellocate_overlay_dir, f'{base_image_name[:-4]}.png'), cellocate_overlay_img_pos)
 
-
-        #print(f"new_image.shape {new_image.shape}")
-        #print(f"conf_img_rgb.shape {conf_img_rgb.shape}")
 
         if config['DEFAULT'].getboolean('save_image_with_conf_overlay'):
 
@@ -987,16 +925,23 @@ class CellAnalyzer:
             cv2.imwrite(os.path.join(conf_overlay_dir, f'{base_image_name[:-4]}.png'), conf_overlay_img)
         
         
-        alive_count, dead_count, unclear_count, analysed_cells = get_cell_state(positions, alive_uint, dead_uint)
+        alive_count, dead_count, unclear_count, AnalyzedCells = get_cell_state(positions, alive_uint, dead_uint)
         
         magnification = str(config['DEFAULT']['magnification'])
 
-        if magnification == '4x':
-            mag_factor = 2.82 
-        elif  magnification == '10x':
-            mag_factor = 1.24  
-        elif  magnification == '20x':
-            mag_factor = 0.62 
+        magnification_factors = {
+            '4x': 2.82,
+            '10x': 1.24, 
+            '20x': 0.62 
+        }
+        mag_factor = magnification_factors.get(magnification, 1.0)
+
+                                                                                                                                                                    #if magnification == '4x':
+                                                                                                                                                                    #    mag_factor = 2.82 
+                                                                                                                                                                    #elif  magnification == '10x':
+                                                                                                                                                                    #    mag_factor = 1.24  
+                                                                                                                                                                    #elif  magnification == '20x':
+                                                                                                                                                                    #    mag_factor = 0.62 
 
         avg_alive_area = 0
         if alive_count > 0:
@@ -1036,13 +981,13 @@ class CellAnalyzer:
                                 img_gray = cv2.cvtColor(org_img, cv2.COLOR_BGR2GRAY)
 
                         elif dtype == 'uint16':
-                            print("Image is 16-bit")
+                            #print("Image is 16-bit")
                             img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
                             cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
 
 
                         elif dtype == 'float32':
-                            print("Image is 32-bit")
+                            #print("Image is 32-bit")
                             img_gray = cv2.normalize(org_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
                             cv2.imwrite(os.path.join(full_path, base_image_name), img_gray) 
 
@@ -1064,8 +1009,6 @@ class CellAnalyzer:
                         norm_filt_alive[alive_uint <= 0] = 0
                         alive_norm_filt_tot_int = np.sum(norm_filt_alive)
                         alive_norm_filt_tot_ints[fcn] = alive_norm_filt_tot_int
-                        #alive_norm_filt_avg_int = alive_norm_filt_tot_int / alive_area
-                        #alive_norm_filt_tot_ints[fcn] = alive_norm_filt_avg_int
                     else:
                         norm_filt_alive = None
                         alive_norm_filt_tot_ints[fcn] = 0
@@ -1075,14 +1018,10 @@ class CellAnalyzer:
                         norm_filt_dead[dead_uint == 0] = 0
                         dead_norm_filt_tot_int = np.sum(norm_filt_dead)
                         dead_norm_filt_tot_ints[fcn] = dead_norm_filt_tot_int
-                        #dead_norm_filt_avg_int = dead_norm_filt_tot_int / dead_area
-                        #dead_norm_filt_tot_ints[fcn] = dead_norm_filt_avg_int
                     else:
                         norm_filt_dead = None
                         dead_norm_filt_tot_ints[fcn] = 0
 
-                    #cv2.imwrite(os.path.join('E:/PyInstallerTests/VID871', f'{base_image_name[:-4]}_{fcn}_norm_alive.png'),norm_filt_alive)
-                    #cv2.imwrite(os.path.join('E:/PyInstallerTests/VID871', f'{base_image_name[:-4]}_{fcn}_norm_dead.png'),norm_filt_dead)
 
                     normalized_filtered_conf = normalized_img_uint8.copy()
                     normalized_filtered_conf[conf_uint] = 0
@@ -1110,8 +1049,6 @@ class CellAnalyzer:
                                 denoised_filt_alive[alive_uint <= 0] = 0
                                 alive_denoised_filt_tot_int = np.sum(denoised_filt_alive)
                                 alive_denoised_filt_tot_ints[fcn] = alive_denoised_filt_tot_int
-                                #alive_denoised_filt_avg_int = alive_denoised_filt_tot_int / alive_area
-                                #alive_denoised_filt_tot_ints[fcn] = alive_denoised_filt_avg_int
                             else:
                                 denoised_filt_alive = None
                                 alive_denoised_filt_tot_ints[fcn] = 0
@@ -1121,7 +1058,7 @@ class CellAnalyzer:
                                 denoised_filt_dead[dead_uint == 0] = 0
                                 dead_denoised_filt_tot_int = np.sum(denoised_filt_dead)
                                 dead_denoised_filt_tot_ints[fcn] = dead_denoised_filt_tot_int
-                                dead_denoised_filt_avg_int = dead_denoised_filt_tot_int / dead_area
+                                #dead_denoised_filt_avg_int = dead_denoised_filt_tot_int / dead_area
                                 #dead_denoised_filt_tot_ints[fcn] = dead_denoised_filt_avg_int
 
                                 #if 'VID871_C10_1' in base_image_name and fcn == 'nir':
@@ -1133,13 +1070,11 @@ class CellAnalyzer:
                                 denoised_filt_dead = None
                                 dead_denoised_filt_tot_ints[fcn] = 0
 
-                            #cv2.imwrite(os.path.join('E:/PyInstallerTests/VID871', f'{base_image_name[:-4]}_{fcn}_denoised_alive.png'),denoised_filt_alive)
-                            #cv2.imwrite(os.path.join('E:/PyInstallerTests/VID871', f'{base_image_name[:-4]}_{fcn}_denoised_dead.png'),denoised_filt_dead)
                     
                             denoised_filtered_conf = img_gray.copy()
                             denoised_filtered_conf[conf_uint] = 0
                     
-                            fcci = flourescence_channel_image(fcn, org_img, img_gray, 
+                            fcci = FluorescenceChannelImage(fcn, org_img, img_gray, 
                                                               normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf, 
                                                               img_gray, denoised_filt_alive, denoised_filt_dead, denoised_filtered_conf)
                     
@@ -1150,7 +1085,7 @@ class CellAnalyzer:
 
                     else:
 
-                        fcci = flourescence_channel_image(fcn, org_img, img_gray, 
+                        fcci = FluorescenceChannelImage(fcn, org_img, img_gray, 
                                                           normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf,
                                                           None, None, None, None)
 
@@ -1165,7 +1100,7 @@ class CellAnalyzer:
         avg_alive_size = np.floor(np.sqrt(avg_alive_area))
         avg_dead_size = np.floor(np.sqrt(avg_dead_area))
 
-        analysed_cells_final = self.analyze_cell_flourescence_channels(analysed_cells, flourescence_channels, avg_alive_size, avg_dead_size)
+        AnalyzedCells_final = self.analyze_cell_flourescence_channels(AnalyzedCells, flourescence_channels, avg_alive_size, avg_dead_size)
 
         image_name_parts = base_image_name[:-4].split("_")
 
@@ -1200,16 +1135,13 @@ class CellAnalyzer:
             result_dict[f'mean_dead_{fcn}_norm_intensity'] = intensity / dead_count
 
         for fcn, intensity in dead_denoised_filt_tot_ints.items():
-            #if fcn == 'nir':
-            #    print(f'nir intensity: {intensity}')
-
             result_dict[f'dead_{fcn}_denoised_intensity'] = intensity
             result_dict[f'mean_dead_{fcn}_denoised_intensity'] = intensity / dead_count
 
 
         cells_list = []
 
-        for ac in analysed_cells_final:
+        for ac in AnalyzedCells_final:
             cell_dict = {
                 'name': base_image_name[:-4],
                 'x': ac.x,
@@ -1262,12 +1194,11 @@ def on_resource_dropdown_change(event_value):
 
 
 def open_settings():
-    print("Settings")
+    #print("Settings")
     config.read('config.ini')
 
     new_window = tk.Toplevel()
     new_window.title("Settings")
-    #new_window.geometry("800x600")
     new_window.lift()
     new_window.attributes('-topmost', True)
 
@@ -1319,7 +1250,7 @@ def open_settings():
     checkbox_frame.grid(row=2, column=0, sticky="nsew")
     
     save_image_with_cellocate_overlay_value = config['DEFAULT'].getboolean('save_image_with_cellocate_overlay')  
-    checkbox_cellocate_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with cellocate overlay?", command=on_save_image_with_cellocate_overlay)
+    checkbox_cellocate_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with CellLocate overlay?", command=on_save_image_with_cellocate_overlay)
     checkbox_cellocate_overlay.pack(pady=(50,5), padx=5, anchor='w')
     checkbox_cellocate_overlay.select() if save_image_with_cellocate_overlay_value else checkbox_cellocate_overlay.deselect() 
 
@@ -1366,12 +1297,24 @@ def open_settings():
 
 def main(): 
     root = ctk.CTk()  # Create a customtkinter root window
-    root.title("Cellanalyser Lite")
-    root.geometry('400x370')
+    root.title("CellLocator v0.9")
+    root.geometry('300x370')
 
     CA = CellAnalyzer()
 
+    custom_font = tkfont.Font(size=14)
+    #menubar = tk.Menu(root, font=custom_font)
     menubar = Menu(root)
+
+    def open_qs():
+        # Get the absolute path of the PDF file (for platform compatibility)
+        pdf_path = os.path.abspath('CellLocator - Quickstart.pdf')
+
+        # Attempt to open the manual
+        try:
+            os.startfile(pdf_path)  # OS-appropriate way to open files
+        except OSError:
+            print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
 
     def open_manual():
         # Get the absolute path of the PDF file (for platform compatibility)
@@ -1395,12 +1338,11 @@ def main():
 
 
     # Settings
-    settings_menu = Menu(menubar, tearoff=0)
+    settings_menu = Menu(menubar, tearoff=0, font=custom_font)
     settings_menu.add_command(label="Settings", command=open_settings)
-    settings_menu.add_command(label="Quick Start", command=open_manual)
-    settings_menu.add_command(label="Manual", command=open_manual)
+    settings_menu.add_command(label="Quickstart", command=open_qs)
+    #settings_menu.add_command(label="Manual", command=open_manual)
     settings_menu.add_command(label="GitHub", command=open_github)
-    #settings_menu.add_command(label="Citeation", command=open_settings)
     menubar.add_cascade(label="Menu", menu=settings_menu)
 
     root.config(menu=menubar)
