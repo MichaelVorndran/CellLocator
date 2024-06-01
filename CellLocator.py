@@ -538,6 +538,9 @@ class CellAnalyzer:
         fig_count, axes_count = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
         fig_count.canvas.manager.window.title('Cell Count')
 
+        fig_percent, axes_percent = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
+        fig_percent.canvas.manager.window.title('Cell Count')
+
         fig_avg_area, axes_avg_area = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
         fig_avg_area.canvas.manager.window.title('Average Cell Area')
 
@@ -679,6 +682,7 @@ class CellAnalyzer:
             create_single_plot(axes_conf, unique_vid_well_subsets[0], ['confluence'], '%')
             create_single_plot(axes_conf_cellocate, unique_vid_well_subsets[0], ['confluence alive', 'confluence dead', 'confluence'], '%')
             create_single_plot(axes_count, unique_vid_well_subsets[0], ['alive cell count', 'dead cell count', 'total cell count'], 'Count')
+            create_single_plot(axes_percent, unique_vid_well_subsets[0], ['alive cell percent', 'dead cell percent'], '%')
             create_single_plot(axes_avg_area, unique_vid_well_subsets[0], ['avg_alive_area', 'avg_dead_area'], 'Average Cell Area in $\mu m$')
         
         else:
@@ -686,6 +690,7 @@ class CellAnalyzer:
                 create_multi_plot(axes_conf, vid_well_subset, ['confluence'], '%', i)
                 create_multi_plot(axes_conf_cellocate, vid_well_subset, ['confluence alive', 'confluence dead', 'confluence'], '%', i)
                 create_multi_plot(axes_count, vid_well_subset, ['alive cell count', 'dead cell count', 'total cell count'], 'Count', i)
+                create_multi_plot(axes_percent, vid_well_subset, ['alive cell percent', 'dead cell percent'], '%', i)
                 create_multi_plot(axes_avg_area, vid_well_subset, ['avg_alive_area', 'avg_dead_area'], 'Average Cell Area in $\mu m$', i)
         
 
@@ -693,6 +698,7 @@ class CellAnalyzer:
             fig_conf.savefig(os.path.join(plot_dir, 'confluence.pdf'))
             fig_conf_cellocate.savefig(os.path.join(plot_dir, 'confluence_CellLocate.pdf'))
             fig_count.savefig(os.path.join(plot_dir, 'Cell Count.pdf'))
+            fig_percent.savefig(os.path.join(plot_dir, 'Cell State Percent.pdf'))
             fig_avg_area.savefig(os.path.join(plot_dir, 'Average Cell Area.pdf'))
         except Exception as e:
             print(f"Error saving plot: {e}")
@@ -926,6 +932,10 @@ class CellAnalyzer:
         
         
         alive_count, dead_count, unclear_count, AnalyzedCells = get_cell_state(positions, alive_uint, dead_uint)
+
+        total_count = alive_count + dead_count
+        alive_percent = round((alive_count / total_count)*100, 2)
+        dead_percent = round((dead_count / total_count)*100, 2)
         
         magnification = str(config['DEFAULT']['magnification'])
 
@@ -1114,6 +1124,8 @@ class CellAnalyzer:
             'total cell count' : alive_count+dead_count,
             'alive cell count' : alive_count,
             'dead cell count' : dead_count,
+            'alive cell percent' : alive_percent,
+            'dead cell percent' : dead_percent,
             'confluence' : total_conf,
             'confluence alive' : alive_conf,
             'confluence dead' : dead_conf,
