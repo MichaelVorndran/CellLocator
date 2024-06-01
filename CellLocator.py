@@ -698,7 +698,7 @@ class CellAnalyzer:
             fig_conf.savefig(os.path.join(plot_dir, 'confluence.pdf'))
             fig_conf_cellocate.savefig(os.path.join(plot_dir, 'confluence_CellLocate.pdf'))
             fig_count.savefig(os.path.join(plot_dir, 'Cell Count.pdf'))
-            fig_percent.savefig(os.path.join(plot_dir, 'Cell State Percent.pdf'))
+            fig_percent.savefig(os.path.join(plot_dir, 'Cell State Percentage.pdf'))
             fig_avg_area.savefig(os.path.join(plot_dir, 'Average Cell Area.pdf'))
         except Exception as e:
             print(f"Error saving plot: {e}")
@@ -1309,7 +1309,7 @@ def open_settings():
 
 def main(): 
     root = ctk.CTk()  # Create a customtkinter root window
-    root.title("CellLocator v0.9")
+    root.title("CellLocator v0.9.1")
     root.geometry('300x370')
 
     CA = CellAnalyzer()
