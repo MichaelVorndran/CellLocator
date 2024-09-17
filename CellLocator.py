@@ -1231,7 +1231,7 @@ def on_resource_dropdown_change(event_value):
 
 
 def open_settings():
-    #print("Settings")
+
     config.read('config.ini')
 
     new_window = tk.Toplevel()
@@ -1307,7 +1307,8 @@ def open_settings():
     csv_decimal_label.pack(padx=5, anchor='w')
 
     csv_decimal_dropdown = ctk.CTkComboBox(csv_decimal_frame, values=csv_decimal_options, command=on_csv_decimal_dropdown_change)
-    #csv_decimal_dropdown.set(selected_value)
+    csv_decimal_dropdown_value = config['DEFAULT'].get('csv_decimal')  
+    csv_decimal_dropdown.set(csv_decimal_dropdown_value)
     csv_decimal_dropdown.pack(pady=(5,50), padx=5, anchor='w')
 
 
@@ -1333,14 +1334,13 @@ def open_settings():
 
 
 def main(): 
-    root = ctk.CTk()  # Create a customtkinter root window
-    root.title("CellLocator v0.9.1")
+    root = ctk.CTk()
+    root.title("CellLocator v0.9.2")
     root.geometry('300x370')
 
     CA = CellAnalyzer()
 
     custom_font = tkfont.Font(size=14)
-    #menubar = tk.Menu(root, font=custom_font)
     menubar = Menu(root)
 
     def open_qs():
@@ -1349,7 +1349,7 @@ def main():
 
         # Attempt to open the manual
         try:
-            os.startfile(pdf_path)  # OS-appropriate way to open files
+            os.startfile(pdf_path)
         except OSError:
             print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
 
@@ -1359,13 +1359,13 @@ def main():
 
         # Attempt to open the manual
         try:
-            os.startfile(pdf_path)  # OS-appropriate way to open files
+            os.startfile(pdf_path)
         except OSError:
             print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
 
 
     def open_github():
-        github_url = "https://github.com/MichaelVorndran"  # Replace with your actual URL
+        github_url = "https://github.com/MichaelVorndran/CellLocator"
         webbrowser.open(github_url)
 
     def on_use_denoiser():
