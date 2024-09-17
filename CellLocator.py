@@ -890,7 +890,7 @@ class CellAnalyzer:
         for p in positions:
             cv2.circle(pos_color, p, 1, (255, 255, 255), 2)
         
-        cv2.imwrite(os.path.join(pos_dir, f'{base_image_name[:-4]}_.png'), pos_color)
+        cv2.imwrite(os.path.join(pos_dir, f'{base_image_name[:-4]}.png'), pos_color)
         
         conf_rgb = gray2rgba_mask(conf_uint, [0, 255, 255])
         alive_rgba = gray2rgba_mask(alive_uint, [255, 0, 0])
@@ -934,8 +934,16 @@ class CellAnalyzer:
         alive_count, dead_count, unclear_count, AnalyzedCells = get_cell_state(positions, alive_uint, dead_uint)
 
         total_count = alive_count + dead_count
-        alive_percent = round((alive_count / total_count)*100, 2)
-        dead_percent = round((dead_count / total_count)*100, 2)
+
+        if alive_count > 0:
+            alive_percent = round((alive_count / total_count)*100, 2)
+        else:
+            alive_percent = 0
+
+        if dead_count > 0:
+            dead_percent = round((dead_count / total_count)*100, 2)
+        else:
+            dead_percent = 0
         
         magnification = str(config['DEFAULT']['magnification'])
 
@@ -1136,19 +1144,36 @@ class CellAnalyzer:
 
         for fcn, intensity in alive_norm_filt_tot_ints.items():
             result_dict[f'alive_{fcn}_norm_intensity'] = intensity
-            result_dict[f'mean_alive_{fcn}_norm_intensity'] = intensity / alive_count
+
+            if alive_count > 0:
+                result_dict[f'mean_alive_{fcn}_norm_intensity'] = intensity / alive_count
+            else:
+                result_dict[f'mean_alive_{fcn}_norm_intensity'] = 0
 
         for fcn, intensity in alive_denoised_filt_tot_ints.items():
             result_dict[f'alive_{fcn}_denoised_intensity'] = intensity
-            result_dict[f'mean_alive_{fcn}_denoised_intensity'] = intensity / alive_count
+
+            if alive_count > 0:
+                result_dict[f'mean_alive_{fcn}_denoised_intensity'] = intensity / alive_count
+            else:
+                result_dict[f'mean_alive_{fcn}_denoised_intensity'] = 0
+
 
         for fcn, intensity in dead_norm_filt_tot_ints.items():
             result_dict[f'dead_{fcn}_norm_intensity'] = intensity
-            result_dict[f'mean_dead_{fcn}_norm_intensity'] = intensity / dead_count
+
+            if dead_count > 0:
+                result_dict[f'mean_dead_{fcn}_norm_intensity'] = intensity / dead_count
+            else:
+                result_dict[f'mean_dead_{fcn}_norm_intensity'] = 0
 
         for fcn, intensity in dead_denoised_filt_tot_ints.items():
             result_dict[f'dead_{fcn}_denoised_intensity'] = intensity
-            result_dict[f'mean_dead_{fcn}_denoised_intensity'] = intensity / dead_count
+
+            if dead_count > 0:
+                result_dict[f'mean_dead_{fcn}_denoised_intensity'] = intensity / dead_count
+            else:
+                result_dict[f'mean_dead_{fcn}_denoised_intensity'] = 0
 
 
         cells_list = []
