@@ -59,11 +59,11 @@ class FluorescenceAverageValues:
         self.denoised = denoised
 
 class AnalyzedCell:
-    def __init__(self, x, y, state, avg_flourrescence_intesities):
+    def __init__(self, x, y, state, avg_fluorescence_intensities):
         self.x = x
         self.y = y
         self.state = state
-        self.avg_flourrescence_intesities = avg_flourrescence_intesities 
+        self.avg_fluorescence_intensities = avg_fluorescence_intensities 
         
         
 
@@ -280,29 +280,30 @@ class CellAnalyzer:
         self.main_dir = ''
         self.phase_img_dir = ''
         self.VID = ''
-        self.flourescence_channel_names = config['DEFAULT'].get('flourescence_channel_names').split(',')
-        self.flourescence_channel_names_found = []
-        self.flourescence_channel_dirs = []
+        self.fluorescence_channel_names = config['DEFAULT'].get('fluorescence_channel_names').split(',')
+        self.fluorescence_channel_names_found = []
+        self.fluorescence_channel_dirs = []
+        self.measurement_scale = float(config['DEFAULT']['measurement_scale'])
 
 
 
     def on_select_bf_dir_clicked(self):
         self.main_dir = filedialog.askdirectory()
         self.phase_img_dir = os.path.join(self.main_dir,'phase')
-        self.flourescence_channel_names_found = []
+        self.fluorescence_channel_names_found = []
 
         filenames = os.listdir(self.phase_img_dir)
         if filenames:  
             self.VID = filenames[0].split('_', 1)[0]
             #print(self.VID)
 
-        for fcn in self.flourescence_channel_names:
+        for fcn in self.fluorescence_channel_names:
             full_path = os.path.join(self.main_dir, fcn)
             if os.path.isdir(full_path):
-                self.flourescence_channel_dirs.append(full_path)
-                self.flourescence_channel_names_found.append(fcn)
+                self.fluorescence_channel_dirs.append(full_path)
+                self.fluorescence_channel_names_found.append(fcn)
                 if set(os.listdir(self.phase_img_dir)) != set(os.listdir(full_path)):
-                    print(f"The number and/or the names of phase images and the {fcn} flourescence channel don't match! Make sure you want to continue with the analysis.") 
+                    print(f"The number and/or the names of phase images and the {fcn} fluorescence channel don't match! Make sure you want to continue with the analysis.") 
 
 
 
@@ -314,7 +315,7 @@ class CellAnalyzer:
         use_denoiser = config['DEFAULT'].getboolean('use_denoiser') 
 
         if use_denoiser:
-            for fscn in self.flourescence_channel_names_found:
+            for fscn in self.fluorescence_channel_names_found:
                 fscn_dir = os.path.join(self.main_dir, fscn)
 
                 if fscn == 'red':
@@ -352,7 +353,7 @@ class CellAnalyzer:
                 
                 num_processes = int(max((mp.cpu_count() * (resource_allocation / 100)),1))
                 if num_processes > 1:
-                    print(f"\nStarting {num_processes} processes to denoise {fscn} flourescence channel ")
+                    print(f"\nStarting {num_processes} processes to denoise {fscn} fluorescence channel ")
                 else:
                     print("\nStarting 1 process")
 
@@ -362,7 +363,7 @@ class CellAnalyzer:
                         pbar.update(1)
                 
                 pbar.close()
-                print(f"Denoising {fscn} flourescence channel complete.")
+                print(f"Denoising {fscn} fluorescence channel complete.")
                 
 
 
@@ -547,13 +548,13 @@ class CellAnalyzer:
 
         use_denoiser = config['DEFAULT'].getboolean('use_denoiser')  
 
-        flourescence_channel_typs = []
-        flourescence_channel_typs.append('norm')
+        flourescence_channel_types = []
+        flourescence_channel_types.append('norm')
 
         if use_denoiser:
-            flourescence_channel_typs.append('denoised')
+            flourescence_channel_types.append('denoised')
 
-        for fct in flourescence_channel_typs:
+        for fct in flourescence_channel_types:
 
             plot_data = fct
 
@@ -563,10 +564,10 @@ class CellAnalyzer:
                 plot_label = 'Denoised'
 
 
-            if len(self.flourescence_channel_names_found) == 2:
+            if len(self.fluorescence_channel_names_found) == 2:
 
                 fcns = []
-                for fcn in self.flourescence_channel_names_found:
+                for fcn in self.fluorescence_channel_names_found:
                     fcns.append(fcn)
         
                 color_map = {'alive': 'blue', 'dead': 'magenta'}
@@ -596,10 +597,10 @@ class CellAnalyzer:
                     #plotly_fig.show()
 
 
-            if len(self.flourescence_channel_names_found) == 3:
+            if len(self.fluorescence_channel_names_found) == 3:
         
                 fcns = []
-                for fcn in self.flourescence_channel_names_found:
+                for fcn in self.fluorescence_channel_names_found:
                     fcns.append(fcn)
         
                 color_map = {'alive': 'blue', 'dead': 'magenta'}
@@ -634,7 +635,7 @@ class CellAnalyzer:
 
 
 
-            for fcn in self.flourescence_channel_names_found:
+            for fcn in self.fluorescence_channel_names_found:
 
                 fig_fsc, axes_fsc = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
                 fig_fsc.canvas.manager.window.title(f'{plot_label} Total {fcn} Flourescence Intensity')
@@ -656,7 +657,7 @@ class CellAnalyzer:
                 fig_fsc.tight_layout()
 
 
-            for fcn in self.flourescence_channel_names_found:
+            for fcn in self.fluorescence_channel_names_found:
 
                 fig_fsc, axes_fsc = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
                 fig_fsc.canvas.manager.window.title(f'{plot_label} Mean {fcn} Flourescence Intensity')
@@ -714,24 +715,48 @@ class CellAnalyzer:
 
 
 
-    def analyze_cell_flourescence_channels(self, cells, flourescence_channels, avg_size_alive, avg_size_dead):
+    def draw_measuring_squares(self, AnalyzedCells, avg_alive_size, avg_dead_size, img_h, img_w):
+        
+        alive_square_side = int(avg_alive_size*self.measurement_scale) if avg_alive_size > 0 else 5
+        dead_square_side = int(avg_dead_size*self.measurement_scale) if avg_dead_size > 0 else 5
 
-        if flourescence_channels:
+        overlay_image = np.zeros((img_h, img_w, 3), dtype=np.uint8)
+
+        for cell in AnalyzedCells:
+            x, y = cell.x, cell.y
+            if cell.state == 'alive':
+                square_side = alive_square_side
+                color = (255, 0, 0)
+            elif cell.state == 'dead':
+                square_side = dead_square_side
+                color = (255, 0, 255)
+            else:
+                continue
+
+            top_left = (int(x - square_side / 2), int(y - square_side / 2))
+            bottom_right = (int(x + square_side / 2), int(y + square_side / 2))
+            cv2.rectangle(overlay_image, top_left, bottom_right, color, 1)
+
+        return overlay_image
+
+    def analyze_cell_fluorescence_channels(self, cells, fluorescence_channels, avg_size_alive, avg_size_dead):
+
+        if fluorescence_channels:
     
-            img_h, img_w = flourescence_channels[0].org_color.shape[:2]
+            img_h, img_w = fluorescence_channels[0].org_color.shape[:2]
     
             for cell in cells:
                 x = int(cell.x)
                 y = int(cell.y)
 
                 if cell.state == 'alive':
-                    size = avg_size_alive
+                    size = int(avg_size_alive*self.measurement_scale)
                 else:
-                    size = avg_size_dead
+                    size = int(avg_size_dead*self.measurement_scale)
 
-                avg_flourrescence_intesities = {}
+                avg_fluorescence_intensities = {}
 
-                for fscc in flourescence_channels:
+                for fscc in fluorescence_channels:
 
                     if (x >= size) and (x < (img_w - size - 1)) and (y >= size) and (y < (img_h - size - 1)):
 
@@ -752,13 +777,13 @@ class CellAnalyzer:
                             average_denoised_gray = np.mean(denoised_gray_crop)
                             fav.denoised = average_denoised_gray
 
-                        avg_flourrescence_intesities[fscc.name] = fav
+                        avg_fluorescence_intensities[fscc.name] = fav
 
                     else:
                         fav = FluorescenceAverageValues(-2,-2,-2)
-                        avg_flourrescence_intesities[fscc.name] = fav
+                        avg_fluorescence_intensities[fscc.name] = fav
 
-                cell.avg_flourrescence_intesities = avg_flourrescence_intesities
+                cell.avg_fluorescence_intensities = avg_fluorescence_intensities
                                
         return cells
 
@@ -869,18 +894,21 @@ class CellAnalyzer:
         dead_dir = os.path.join(main_dir, modelname, 'dead')
         pos_org_dir = os.path.join(main_dir, modelname, 'pos_org')
         pos_dir = os.path.join(main_dir, modelname, 'pos')
+        
 
         os.makedirs(conf_dir, exist_ok=True)
         os.makedirs(alive_dir, exist_ok=True)
         os.makedirs(dead_dir, exist_ok=True)
         os.makedirs(pos_org_dir, exist_ok=True)
         os.makedirs(pos_dir, exist_ok=True)
+        
                         
         base_image_name = os.path.basename(image_path)
         cv2.imwrite(os.path.join(conf_dir, f'{base_image_name[:-4]}.png'), conf_uint)
         cv2.imwrite(os.path.join(alive_dir, f'{base_image_name[:-4]}.png'), alive_uint)
         cv2.imwrite(os.path.join(dead_dir, f'{base_image_name[:-4]}.png'), dead_uint)
         cv2.imwrite(os.path.join(pos_org_dir, f'{base_image_name[:-4]}.png'), pos_uint)
+        
 
 
         positions = get_pos_contours(pos_uint)
@@ -954,13 +982,6 @@ class CellAnalyzer:
         }
         mag_factor = magnification_factors.get(magnification, 1.0)
 
-                                                                                                                                                                    #if magnification == '4x':
-                                                                                                                                                                    #    mag_factor = 2.82 
-                                                                                                                                                                    #elif  magnification == '10x':
-                                                                                                                                                                    #    mag_factor = 1.24  
-                                                                                                                                                                    #elif  magnification == '20x':
-                                                                                                                                                                    #    mag_factor = 0.62 
-
         avg_alive_area = 0
         if alive_count > 0:
             avg_alive_area = round(((np.sum(alive_uint)/255)/alive_count) * mag_factor,0)
@@ -970,7 +991,7 @@ class CellAnalyzer:
             avg_dead_area = round(((np.sum(dead_uint)/255)/dead_count) * mag_factor,0)
 
 
-        flourescence_channels = []
+        fluorescence_channels = []
         alive_norm_filt_tot_ints = {}
         dead_denoised_filt_tot_ints = {}
         alive_denoised_filt_tot_ints = {}
@@ -980,7 +1001,7 @@ class CellAnalyzer:
 
 
 
-        for fcn in self.flourescence_channel_names_found:
+        for fcn in self.fluorescence_channel_names_found:
             full_path = os.path.join(self.main_dir, fcn)
             full_path_denoised = os.path.join(self.main_dir, f'{fcn}_denoised')
 
@@ -1096,7 +1117,7 @@ class CellAnalyzer:
                                                               normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf, 
                                                               img_gray, denoised_filt_alive, denoised_filt_dead, denoised_filtered_conf)
                     
-                            flourescence_channels.append(fcci)
+                            fluorescence_channels.append(fcci)
                     
                         except Exception as e:
                             print(e)
@@ -1107,7 +1128,7 @@ class CellAnalyzer:
                                                           normalized_img_uint8, norm_filt_alive, norm_filt_dead, normalized_filtered_conf,
                                                           None, None, None, None)
 
-                    flourescence_channels.append(fcci)
+                    fluorescence_channels.append(fcci)
 
 
                 except Exception as e:
@@ -1118,7 +1139,18 @@ class CellAnalyzer:
         avg_alive_size = np.floor(np.sqrt(avg_alive_area))
         avg_dead_size = np.floor(np.sqrt(avg_dead_area))
 
-        AnalyzedCells_final = self.analyze_cell_flourescence_channels(AnalyzedCells, flourescence_channels, avg_alive_size, avg_dead_size)
+        AnalyzedCells_final = self.analyze_cell_fluorescence_channels(AnalyzedCells, fluorescence_channels, avg_alive_size, avg_dead_size)
+
+
+        if config['DEFAULT'].getboolean('save_image_with_measurement_overlay'):
+            measurement_dir = os.path.join(main_dir, modelname, 'measurement_overlay')
+            os.makedirs(measurement_dir, exist_ok=True)
+            img_measuring_points = self.draw_measuring_squares(AnalyzedCells, avg_alive_size, avg_dead_size, height, width)
+            cv2.imwrite(os.path.join(measurement_dir, f'{base_image_name[:-4]}.png'), img_measuring_points)
+
+
+
+
 
         image_name_parts = base_image_name[:-4].split("_")
 
@@ -1186,8 +1218,8 @@ class CellAnalyzer:
                 'state': ac.state
             }
             
-            if flourescence_channels:
-                for fcn, int_values in ac.avg_flourrescence_intesities.items():
+            if fluorescence_channels:
+                for fcn, int_values in ac.avg_fluorescence_intensities.items():
 
                     cell_dict[f'{fcn}_org'] = int_values.org
                     cell_dict[f'{fcn}_norm'] = int_values.normalized
@@ -1270,6 +1302,16 @@ def open_settings():
     def on_save_image_with_conf_overlay():
         config['DEFAULT']['save_image_with_conf_overlay'] = str(checkbox_conf_overlay.get())
 
+    def on_save_image_with_measurement_overlay():
+        config['DEFAULT']['save_image_with_measurement_overlay'] = str(checkbox_measurement_overlay.get())
+
+    def on_measurement_scale_change(*args):
+        try:
+            scale = float(measurement_scale_var.get())
+            config['DEFAULT']['measurement_scale'] = str(scale)
+        except ValueError:
+            messagebox.showerror("Error", "Invalid input. Please enter a valid floating-point number.")
+
     def on_csv_decimal_dropdown_change(event_value):
         config['DEFAULT']['csv_decimal'] = str(event_value)
 
@@ -1294,14 +1336,40 @@ def open_settings():
     checkbox_frame = tk.Frame(new_window)
     checkbox_frame.grid(row=3, column=0, sticky="nsew")
     
-    save_image_with_overlay_value = config['DEFAULT'].getboolean('save_image_with_conf_overlay')  
+    save_image_with_conf_overlay_value = config['DEFAULT'].getboolean('save_image_with_conf_overlay')  
     checkbox_conf_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with confluence overlay?", command=on_save_image_with_conf_overlay)
-    checkbox_conf_overlay.pack(pady=(5,50), padx=5, anchor='w')
-    checkbox_conf_overlay.select() if save_image_with_overlay_value else checkbox_conf_overlay.deselect() 
+    checkbox_conf_overlay.pack(pady=(5,5), padx=5, anchor='w')
+    checkbox_conf_overlay.select() if save_image_with_conf_overlay_value else checkbox_conf_overlay.deselect() 
+
+    checkbox_frame = tk.Frame(new_window)
+    checkbox_frame.grid(row=4, column=0, sticky="nsew")
+    
+    save_image_with_measurement_overlay_value = config['DEFAULT'].getboolean('save_image_with_measurement_overlay')  
+    checkbox_measurement_overlay = ctk.CTkCheckBox(checkbox_frame, text="Save image with measurement overlay?", command=on_save_image_with_measurement_overlay)
+    checkbox_measurement_overlay.pack(pady=(5,50), padx=5, anchor='w')
+    checkbox_measurement_overlay.select() if save_image_with_measurement_overlay_value else checkbox_measurement_overlay.deselect() 
+
+
+
+     # Frame for measurement scale
+    measurement_scale_frame = tk.Frame(new_window)
+    measurement_scale_frame.grid(row=5, column=0, sticky="nsew")  # Inserted at row 5
+
+    measurement_scale_label = ctk.CTkLabel(measurement_scale_frame, text="Measurement Scale Factor:")
+    measurement_scale_label.pack(padx=5, pady=5, anchor='w')
+
+    measurement_scale_var = tk.StringVar(new_window, value=config['DEFAULT']['measurement_scale'])
+    measurement_scale_entry = ctk.CTkEntry(measurement_scale_frame, textvariable=measurement_scale_var)
+    measurement_scale_entry.pack(pady=5, padx=5, anchor='w')
+
+    measurement_scale_var.trace("w", on_measurement_scale_change)
+    measurement_scale_entry.bind("<Return>", on_measurement_scale_change)  # Update on Enter key press
+    measurement_scale_entry.bind("<FocusOut>", on_measurement_scale_change) # Update on focus out
+
 
 
     csv_decimal_frame = tk.Frame(new_window)
-    csv_decimal_frame.grid(row=4, column=0, sticky="nsew")
+    csv_decimal_frame.grid(row=6, column=0, sticky="nsew")
     csv_decimal_options = [',', '.'] 
     csv_decimal_label = ctk.CTkLabel(csv_decimal_frame, text="Decimal Separator")  
     csv_decimal_label.pack(padx=5, anchor='w')
@@ -1316,7 +1384,7 @@ def open_settings():
 
 
     save_close_frame = tk.Frame(new_window)
-    save_close_frame.grid(row=5, column=0, sticky="nsew")
+    save_close_frame.grid(row=7, column=0, sticky="nsew")
 
     def save_settings():
         with open('config.ini', 'w') as configfile:
@@ -1335,7 +1403,7 @@ def open_settings():
 
 def main(): 
     root = ctk.CTk()
-    root.title("CellLocator v0.9.2")
+    root.title("CellLocator v1.0.0")
     root.geometry('300x370')
 
     CA = CellAnalyzer()
@@ -1353,19 +1421,12 @@ def main():
         except OSError:
             print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
 
-    def open_manual():
-        # Get the absolute path of the PDF file (for platform compatibility)
-        pdf_path = os.path.abspath('CellLocator_Manual.pdf')
-
-        # Attempt to open the manual
-        try:
-            os.startfile(pdf_path)
-        except OSError:
-            print("Error: Could not open PDF file. Check if it exists and you have a PDF reader.") 
-
-
     def open_github():
         github_url = "https://github.com/MichaelVorndran/CellLocator"
+        webbrowser.open(github_url)
+
+    def open_cite():
+        github_url = "https://doi.org/10.5281/zenodo.13774182"
         webbrowser.open(github_url)
 
     def on_use_denoiser():
@@ -1378,8 +1439,9 @@ def main():
     settings_menu = Menu(menubar, tearoff=0, font=custom_font)
     settings_menu.add_command(label="Settings", command=open_settings)
     settings_menu.add_command(label="Quickstart", command=open_qs)
-    #settings_menu.add_command(label="Manual", command=open_manual)
     settings_menu.add_command(label="GitHub", command=open_github)
+    settings_menu.add_command(label="Cite", command=open_cite)
+    
     menubar.add_cascade(label="Menu", menu=settings_menu)
 
     root.config(menu=menubar)
