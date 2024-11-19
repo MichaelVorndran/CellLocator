@@ -4,7 +4,8 @@
 
 Click on Releases
 
-![grafik](https://github.com/user-attachments/assets/aec7bca8-638f-4a68-882e-e9de533b1be4)
+![grafik](https://github.com/user-attachments/assets/364e3cdd-d1fb-4082-9c75-7b297e528311)
+
 
 Then download the zip file and extract it. 
 
