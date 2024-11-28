@@ -1403,7 +1403,7 @@ def open_settings():
 
 def main(): 
     root = ctk.CTk()
-    root.title("CellLocator v1.0.0")
+    root.title("CellLocator v1.0.1")
     root.geometry('300x370')
 
     CA = CellAnalyzer()
