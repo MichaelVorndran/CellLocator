@@ -548,13 +548,13 @@ class CellAnalyzer:
 
         use_denoiser = config['DEFAULT'].getboolean('use_denoiser')  
 
-        flourescence_channel_types = []
-        flourescence_channel_types.append('norm')
+        fluorescence_channel_types = []
+        fluorescence_channel_types.append('norm')
 
         if use_denoiser:
-            flourescence_channel_types.append('denoised')
+            fluorescence_channel_types.append('denoised')
 
-        for fct in flourescence_channel_types:
+        for fct in fluorescence_channel_types:
 
             plot_data = fct
 
@@ -638,19 +638,19 @@ class CellAnalyzer:
             for fcn in self.fluorescence_channel_names_found:
 
                 fig_fsc, axes_fsc = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
-                fig_fsc.canvas.manager.window.title(f'{plot_label} Total {fcn} Flourescence Intensity')
+                fig_fsc.canvas.manager.window.title(f'{plot_label} Total {fcn} Fluorescence Intensity')
 
                 if num_plots == 1: 
-                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'alive_{fcn}_{fct}_intensity', f'dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Flourescence Intensity')
+                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'alive_{fcn}_{fct}_intensity', f'dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Fluorescence Intensity')
 
                 else:
                     for i, vid_well_subset in enumerate(unique_vid_well_subsets):
                         #print(fcn)
-                        create_multi_plot(axes_fsc, vid_well_subset, [f'alive_{fcn}_{fct}_intensity', f'dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Flourescence Intensity', i)
+                        create_multi_plot(axes_fsc, vid_well_subset, [f'alive_{fcn}_{fct}_intensity', f'dead_{fcn}_{fct}_intensity'], f'{plot_label} Total {fcn} Fluorescence Intensity', i)
 
 
                 try:
-                    fig_fsc.savefig(os.path.join(plot_dir, f'{plot_label} Total {fcn} Flourescence Intensity.pdf'))
+                    fig_fsc.savefig(os.path.join(plot_dir, f'{plot_label} Total {fcn} Fluorescence Intensity.pdf'))
                 except Exception as e:
                     print(f"Error saving plot: {e}")
 
@@ -660,18 +660,18 @@ class CellAnalyzer:
             for fcn in self.fluorescence_channel_names_found:
 
                 fig_fsc, axes_fsc = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(fig_size_x, fig_size_y))
-                fig_fsc.canvas.manager.window.title(f'{plot_label} Mean {fcn} Flourescence Intensity')
+                fig_fsc.canvas.manager.window.title(f'{plot_label} Mean {fcn} Fluorescence Intensity')
 
                 if num_plots == 1: 
-                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Flourescence Intensity')
+                    create_single_plot(axes_fsc, unique_vid_well_subsets[0], [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Fluorescence Intensity')
 
                 else:
                     for i, vid_well_subset in enumerate(unique_vid_well_subsets):
-                        create_multi_plot(axes_fsc, vid_well_subset, [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Flourescence Intensity', i)
+                        create_multi_plot(axes_fsc, vid_well_subset, [f'mean_alive_{fcn}_{fct}_intensity', f'mean_dead_{fcn}_{fct}_intensity'], f'{plot_label} Mean {fcn} Fluorescence Intensity', i)
 
 
                 try:
-                    fig_fsc.savefig(os.path.join(plot_dir, f'{plot_label} Mean {fcn} Flourescence Intensity.pdf'))
+                    fig_fsc.savefig(os.path.join(plot_dir, f'{plot_label} Mean {fcn} Fluorescence Intensity.pdf'))
                 except Exception as e:
                     print(f"Error saving plot: {e}")
 
@@ -1450,7 +1450,7 @@ def main():
     btn_open.configure(width=220)
     btn_open.pack(pady=10)
 
-    magnification_options = ["4x", "10x", "20x"] 
+    magnification_options = ["10x", "20x"] 
     magnification_label = ctk.CTkLabel(root, text="Magnification")  
     magnification_label.pack()
 
@@ -1461,7 +1461,7 @@ def main():
 
 
     use_denoiser = config['DEFAULT'].getboolean('use_denoiser')  
-    checkbox_denoiser = ctk.CTkCheckBox(master=root, text="Denoise Flourescence Images?", command=on_use_denoiser)
+    checkbox_denoiser = ctk.CTkCheckBox(master=root, text="Denoise Fluorescence Images?", command=on_use_denoiser)
     checkbox_denoiser.pack(pady=(30,30), padx=5)
     checkbox_denoiser.select() if use_denoiser else checkbox_denoiser.deselect() 
 
